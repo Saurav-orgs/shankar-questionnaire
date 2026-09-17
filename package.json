@@ -1,0 +1,20 @@
+{
+  "name": "filter-patient",
+  "private": true,
+  "version": "0.1.0",
+  "description": "Convenience script runner for the three independent projects. Not a workspace \u2014 api/, patient-web/ and doctor-web/ each own their dependencies.",
+  "scripts": {
+    "install:all": "npm --prefix api install && npm --prefix patient-web install && npm --prefix doctor-web install",
+    "dev": "concurrently -n api,patient,doctor -c blue,green,magenta \"npm --prefix api run start:dev\" \"npm --prefix patient-web run dev\" \"npm --prefix doctor-web run dev\"",
+    "dev:api": "npm --prefix api run start:dev",
+    "dev:patient": "npm --prefix patient-web run dev",
+    "dev:doctor": "npm --prefix doctor-web run dev",
+    "build": "npm --prefix api run build && npm --prefix patient-web run build && npm --prefix doctor-web run build",
+    "test": "npm run check:evaluator && npm --prefix api test && npm --prefix patient-web test",
+    "sync:evaluator": "./scripts/sync-evaluator.sh",
+    "check:evaluator": "./scripts/sync-evaluator.sh --check"
+  },
+  "devDependencies": {
+    "concurrently": "^9.1.2"
+  }
+}

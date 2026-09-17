@@ -1,0 +1,476 @@
+{
+  "_comment": "Hinglish comprehension bake-off — plan.md §9, Phase 5b checkpoint 3.",
+  "_why": "Fine-tuning teaches format and voice cheaply. It does not cheaply teach a language the base model does not already know. So the base model is chosen on one question: can it read Roman-script code-mixed Hindi and extract the clinical facts? Everything else the fine-tune can fix.",
+  "_method": "Each sample is prompted zero-shot with: 'Render this patient note in English. Do not add anything.' The output is then scanned for each expected fact. A fact counts as extracted if any of its accepted surface forms appears. This is keyword recall, which is crude — but the question here is comprehension, not phrasing, and a model that renders the fact in any reasonable English wording passes.",
+  "_scoring": "Per-model score = extracted facts / total facts. Also reported: samples with a hallucinated negation (see `mustNotContain`), which is the failure that matters clinically — a model that turns 'dard hai' into 'no pain' is unusable at any recall.",
+
+  "samples": [
+    {
+      "id": "hg-001",
+      "text": "2 saal se lower back mein dard hai, bending karne pe zyada hota hai.",
+      "facts": [
+        { "key": "duration", "expect": ["2 year", "two year", "2 yr"], "note": "2 saal = 2 years" },
+        { "key": "site", "expect": ["lower back", "low back", "lumbar"] },
+        { "key": "aggravator", "expect": ["bend", "bending", "flexion"] }
+      ]
+    },
+    {
+      "id": "hg-002",
+      "text": "Subah uthne ke baad bahut stiffness rehti hai, thoda chalne ke baad theek ho jata hai.",
+      "facts": [
+        { "key": "morning_stiffness", "expect": ["morning", "waking", "getting up"] },
+        { "key": "stiffness", "expect": ["stiff", "stiffness"] },
+        { "key": "relief_movement", "expect": ["walk", "walking", "moving", "movement"] }
+      ]
+    },
+    {
+      "id": "hg-003",
+      "text": "Pair mein jhunjhuni hoti hai aur raat ko neend nahi aati. Painkiller se thoda aaram milta hai.",
+      "facts": [
+        { "key": "site", "expect": ["leg", "legs", "foot"] },
+        { "key": "paraesthesia", "expect": ["tingl", "pins and needles", "numb"] },
+        { "key": "sleep", "expect": ["sleep", "night", "insomnia"] },
+        { "key": "treatment", "expect": ["painkiller", "pain killer", "analgesic", "medicine"] },
+        { "key": "partial_relief", "expect": ["little", "some relief", "partial", "slight"] }
+      ]
+    },
+    {
+      "id": "hg-004",
+      "text": "Doctor sahab, mujhe operation nahi karana hai. Koi dusra ilaaj bataiye please.",
+      "facts": [
+        { "key": "refuses_surgery", "expect": ["operation", "surgery", "surgical"] },
+        { "key": "declines", "expect": ["not want", "does not want", "doesn't want", "avoid", "refuse", "no operation", "no surgery"] },
+        { "key": "wants_alternative", "expect": ["other treatment", "another treatment", "alternative", "different treatment"] }
+      ]
+    },
+    {
+      "id": "hg-005",
+      "text": "Kaam pe baithne mein problem hoti hai, 10-15 minute se zyada nahi baith pata hoon.",
+      "facts": [
+        { "key": "sitting", "expect": ["sit", "sitting", "seated"] },
+        { "key": "work", "expect": ["work", "job", "office"] },
+        { "key": "duration_limit", "expect": ["10", "15", "ten", "fifteen"] }
+      ]
+    },
+    {
+      "id": "hg-006",
+      "text": "MRI karaya tha 3 mahine pehle, report saath la raha hoon. Disc ka problem bataya tha.",
+      "facts": [
+        { "key": "imaging", "expect": ["mri", "scan"] },
+        { "key": "when", "expect": ["3 month", "three month"] },
+        { "key": "bringing_report", "expect": ["report", "bring", "films"] },
+        { "key": "finding", "expect": ["disc"] }
+      ]
+    },
+    {
+      "id": "hg-007",
+      "text": "Ghar ka kaam karne mein bahut dikkat hoti hai, jhaadu poocha bilkul nahi kar pati.",
+      "facts": [
+        { "key": "housework", "expect": ["housework", "household", "home", "domestic", "chores"] },
+        { "key": "sweeping", "expect": ["sweep", "mop", "clean", "broom"] },
+        { "key": "unable", "expect": ["cannot", "can't", "unable", "not able"] }
+      ]
+    },
+    {
+      "id": "hg-008",
+      "text": "Pehle sirf kamar mein tha, ab leg mein bhi jaa raha hai. Din pe din badh raha hai.",
+      "facts": [
+        { "key": "initial_site", "expect": ["back", "waist", "lower back"] },
+        { "key": "spread", "expect": ["leg", "radiat", "spread", "travel", "down to"] },
+        { "key": "worsening", "expect": ["worse", "worsening", "increasing", "day by day", "progress"] }
+      ]
+    },
+    {
+      "id": "hg-009",
+      "text": "Bahut dard hai, kaam bilkul band karna pada hai. Ghar walo ki madad leni padti hai.",
+      "facts": [
+        { "key": "severe", "expect": ["severe", "a lot", "bad", "lot of pain", "significant"] },
+        { "key": "stopped_work", "expect": ["stop", "stopped", "unable to work", "had to quit"] },
+        { "key": "needs_help", "expect": ["help", "assistance", "family", "support"] }
+      ]
+    },
+    {
+      "id": "hg-010",
+      "text": "Chalne mein dikkat hoti hai, thodi der baad rukna padta hai.",
+      "facts": [
+        { "key": "walking", "expect": ["walk", "walking"] },
+        { "key": "must_stop", "expect": ["stop", "rest", "pause", "halt"] }
+      ]
+    },
+    {
+      "id": "hg-011",
+      "text": "Garam sikai se thoda aaram milta hai lekin thodi der ke liye hi.",
+      "facts": [
+        { "key": "heat", "expect": ["heat", "hot", "warm", "compress", "fomentation"] },
+        { "key": "partial_relief", "expect": ["relief", "helps", "better", "eases"] },
+        { "key": "short_lived", "expect": ["short", "brief", "while", "temporar", "not last"] }
+      ]
+    },
+    {
+      "id": "hg-012",
+      "text": "Dawai roz leni padti hai warna kaam nahi kar pata. Iska koi permanent ilaaj hai kya?",
+      "facts": [
+        { "key": "daily_medication", "expect": ["daily", "every day", "each day"] },
+        { "key": "medication", "expect": ["medicine", "medication", "drug", "tablet", "painkiller"] },
+        { "key": "cannot_work_without", "expect": ["work", "cannot work", "can't work"] },
+        { "key": "asks_cure", "expect": ["permanent", "cure", "permanently"] }
+      ]
+    },
+    {
+      "id": "hg-013",
+      "text": "Bacchon ko uthane mein dard badh jata hai, ghar ke kaam mein dikkat hoti hai.",
+      "facts": [
+        { "key": "lifting_children", "expect": ["child", "children", "kids", "baby"] },
+        { "key": "lifting", "expect": ["lift", "lifting", "picking up", "carry"] },
+        { "key": "worse", "expect": ["worse", "increase", "aggravat", "more pain"] },
+        { "key": "housework", "expect": ["housework", "household", "home", "chores", "domestic"] }
+      ]
+    },
+    {
+      "id": "hg-014",
+      "text": "Raat ko karvat badalne mein dard hota hai, subah uthke akadan rehti hai.",
+      "facts": [
+        { "key": "night", "expect": ["night", "at night"] },
+        { "key": "turning", "expect": ["turn", "turning", "roll", "side", "position"] },
+        { "key": "morning_stiffness", "expect": ["morning", "waking", "stiff"] }
+      ]
+    },
+    {
+      "id": "hg-015",
+      "text": "Pehle bhi doctor ko dikhaya tha, unhone bola tha exercise karo. Kuch fayda nahi hua.",
+      "facts": [
+        { "key": "seen_doctor", "expect": ["doctor", "seen", "consulted", "saw"] },
+        { "key": "advised_exercise", "expect": ["exercise", "exercises"] },
+        { "key": "no_benefit", "expect": ["no benefit", "did not help", "didn't help", "no help", "no improvement", "not help"] }
+      ]
+    },
+    {
+      "id": "hg-016",
+      "text": "Sirf ek baar mein pura checkup ho jaye to accha rahega, baar baar aana mushkil hai.",
+      "facts": [
+        { "key": "single_visit", "expect": ["one visit", "single visit", "once", "one go", "same visit"] },
+        { "key": "repeat_visits_hard", "expect": ["repeated", "again and again", "coming back", "multiple visit", "difficult"] }
+      ]
+    },
+    {
+      "id": "hg-017",
+      "text": "Kaafi time se pareshan hoon. Kaam bhi karna hai aur dard bhi bardaasht nahi hota.",
+      "facts": [
+        { "key": "long_duration", "expect": ["long time", "a while", "long", "some time"] },
+        { "key": "must_work", "expect": ["work", "job"] },
+        { "key": "cannot_bear", "expect": ["bear", "tolerate", "unbearable", "cannot stand", "endure"] }
+      ]
+    },
+    {
+      "id": "hg-018",
+      "text": "Dard ki wajah se chidchidapan ho gaya hai, mood theek nahi rehta.",
+      "facts": [
+        { "key": "irritability", "expect": ["irritab", "irritated", "short temper", "temper"] },
+        { "key": "mood", "expect": ["mood", "low", "depress"] },
+        { "key": "due_to_pain", "expect": ["pain", "because of the pain"] }
+      ]
+    },
+    {
+      "id": "hg-019",
+      "text": "Travel karne mein bahut dikkat hoti hai, bus ya auto mein baithna mushkil hai.",
+      "facts": [
+        { "key": "travel", "expect": ["travel", "travelling", "traveling", "journey", "commut"] },
+        { "key": "transport", "expect": ["bus", "auto", "rickshaw", "transport", "vehicle"] },
+        { "key": "sitting", "expect": ["sit", "sitting"] }
+      ]
+    },
+    {
+      "id": "hg-020",
+      "text": "Family mein sabko yahi problem hai. Papa ko bhi kamar ka dard rehta tha.",
+      "facts": [
+        { "key": "family_history", "expect": ["family", "famil"] },
+        { "key": "father", "expect": ["father", "papa", "dad"] },
+        { "key": "back_pain", "expect": ["back pain", "back", "waist"] }
+      ]
+    },
+
+    {
+      "id": "hg-021",
+      "text": "3 mahine se dard hai. Pehle kam tha ab zyada ho gaya. Sidhe khade hone mein takleef hoti hai.",
+      "facts": [
+        { "key": "duration", "expect": ["3 month", "three month"] },
+        { "key": "worsening", "expect": ["worse", "increased", "more", "progress"] },
+        { "key": "standing", "expect": ["stand", "standing", "upright", "straight"] }
+      ]
+    },
+    {
+      "id": "hg-022",
+      "text": "Khaansi aane par kamar se pair tak current jaisa jhatka lagta hai.",
+      "facts": [
+        { "key": "cough_aggravated", "expect": ["cough", "coughing"] },
+        { "key": "radiation", "expect": ["leg", "down", "radiat", "shoot"] },
+        { "key": "electric_quality", "expect": ["electric", "shock", "current", "shoot", "jolt"] }
+      ]
+    },
+    {
+      "id": "hg-023",
+      "text": "Susu control nahi hota kabhi kabhi. Doctor sahab ye normal hai kya?",
+      "facts": [
+        { "key": "bladder", "expect": ["urin", "bladder", "pee", "pass water"] },
+        { "key": "incontinence", "expect": ["control", "leak", "incontinen", "accident"] },
+        { "key": "intermittent", "expect": ["sometimes", "occasional", "at times", "now and then"] }
+      ],
+      "mustNotContain": ["no urinary", "normal urinary", "denies urinary"],
+      "note": "A model that renders this as normal bladder function is dangerous — this phrasing is how a patient reports the single most urgent red flag in the instrument."
+    },
+    {
+      "id": "hg-024",
+      "text": "Pichle hafte gir gaya tha bathroom mein. Uske baad se kamar mein bahut dard hai.",
+      "facts": [
+        { "key": "fall", "expect": ["fall", "fell", "slip"] },
+        { "key": "when", "expect": ["last week", "a week", "week ago"] },
+        { "key": "since_then", "expect": ["since", "after", "following"] },
+        { "key": "severe", "expect": ["severe", "a lot", "bad", "lot of"] }
+      ]
+    },
+    {
+      "id": "hg-025",
+      "text": "Bukhar bhi rehta hai halka halka, aur raat ko paseena aata hai.",
+      "facts": [
+        { "key": "fever", "expect": ["fever", "temperature", "febrile"] },
+        { "key": "low_grade", "expect": ["mild", "low", "slight", "low-grade"] },
+        { "key": "night_sweats", "expect": ["sweat", "perspir", "night sweat"] }
+      ],
+      "mustNotContain": ["no fever", "afebrile", "denies fever"]
+    },
+    {
+      "id": "hg-026",
+      "text": "Wajan kam ho raha hai bina kuch kiye. 6 mahine mein 8 kilo kam hua.",
+      "facts": [
+        { "key": "weight_loss", "expect": ["weight loss", "lost weight", "losing weight"] },
+        { "key": "unintentional", "expect": ["without", "unintent", "not trying", "no reason"] },
+        { "key": "amount", "expect": ["8", "eight"] },
+        { "key": "period", "expect": ["6 month", "six month"] }
+      ]
+    },
+    {
+      "id": "hg-027",
+      "text": "Chalte chalte pair mein dard hota hai, baith jaon to theek ho jata hai. Khade rehne se nahi.",
+      "facts": [
+        { "key": "walking_pain", "expect": ["walk", "walking"] },
+        { "key": "relief_sitting", "expect": ["sit", "sitting", "sit down"] },
+        { "key": "not_standing", "expect": ["not", "standing does not", "doesn't", "no relief", "without"] }
+      ],
+      "note": "The single most discriminating fact in the instrument — sitting relieves but standing does not points to spine rather than vascular. A model that drops the standing clause loses the discriminator."
+    },
+    {
+      "id": "hg-028",
+      "text": "Haath se cheezein gir jaati hain, shirt ke button lagane mein dikkat hoti hai.",
+      "facts": [
+        { "key": "dropping", "expect": ["drop", "slip", "fall from"] },
+        { "key": "buttons", "expect": ["button", "shirt"] },
+        { "key": "dexterity", "expect": ["dexterity", "fine", "difficult", "hard"] }
+      ]
+    },
+    {
+      "id": "hg-029",
+      "text": "Dono haathon mein sunnpan hai, pehle sirf right mein tha.",
+      "facts": [
+        { "key": "bilateral", "expect": ["both", "bilateral", "two hand"] },
+        { "key": "numbness", "expect": ["numb", "sensation", "tingl"] },
+        { "key": "progression", "expect": ["earlier", "initially", "first", "previously", "started"] }
+      ]
+    },
+    {
+      "id": "hg-030",
+      "text": "Physio 2 mahine kiya tha par koi fark nahi pada. Ab injection ki baat kar rahe hain.",
+      "facts": [
+        { "key": "physiotherapy", "expect": ["physio", "physical therapy"] },
+        { "key": "duration", "expect": ["2 month", "two month"] },
+        { "key": "no_benefit", "expect": ["no difference", "no benefit", "did not help", "didn't help", "no improvement", "not help"] },
+        { "key": "injection_proposed", "expect": ["injection"] }
+      ]
+    },
+    {
+      "id": "hg-031",
+      "text": "Pregnancy chal rahi hai 5 mahine ki. Dard ki dawai lene se dar lagta hai.",
+      "facts": [
+        { "key": "pregnant", "expect": ["pregnan"] },
+        { "key": "gestation", "expect": ["5 month", "five month"] },
+        { "key": "medication_fear", "expect": ["afraid", "scared", "worried", "fear", "reluctant", "hesitant"] }
+      ]
+    },
+    {
+      "id": "hg-032",
+      "text": "Sugar hai mujhe, 10 saal se. Insulin leta hoon.",
+      "facts": [
+        { "key": "diabetes", "expect": ["diabet", "sugar", "blood sugar"] },
+        { "key": "duration", "expect": ["10 year", "ten year"] },
+        { "key": "insulin", "expect": ["insulin"] }
+      ]
+    },
+    {
+      "id": "hg-033",
+      "text": "Beedi peeta hoon din mein 10-12. Chodne ki koshish ki thi par nahi hua.",
+      "facts": [
+        { "key": "smoking", "expect": ["smok", "beedi", "bidi", "tobacco", "cigarette"] },
+        { "key": "amount", "expect": ["10", "12", "ten", "twelve"] },
+        { "key": "tried_quitting", "expect": ["quit", "stop", "give up", "tried"] }
+      ]
+    },
+    {
+      "id": "hg-034",
+      "text": "Operation ho chuka hai 2015 mein. 3 saal theek raha phir wapas shuru ho gaya.",
+      "facts": [
+        { "key": "prior_surgery", "expect": ["operation", "surgery", "operated"] },
+        { "key": "year", "expect": ["2015"] },
+        { "key": "pain_free_interval", "expect": ["3 year", "three year"] },
+        { "key": "recurrence", "expect": ["return", "again", "recurr", "came back", "restart", "started again"] }
+      ]
+    },
+    {
+      "id": "hg-035",
+      "text": "Cancer ka ilaaj hua tha breast ka, 4 saal pehle. Ab kamar mein dard hai.",
+      "facts": [
+        { "key": "cancer", "expect": ["cancer", "malignan", "carcinoma"] },
+        { "key": "primary", "expect": ["breast"] },
+        { "key": "when", "expect": ["4 year", "four year"] },
+        { "key": "current", "expect": ["back", "waist", "lumbar"] }
+      ],
+      "mustNotContain": ["no history of cancer", "denies cancer"]
+    },
+    {
+      "id": "hg-036",
+      "text": "Gaadi chalate waqt sabse zyada dard hota hai. 8-10 ghante drive karta hoon roz.",
+      "facts": [
+        { "key": "driving", "expect": ["driv", "vehicle", "car"] },
+        { "key": "worst_activity", "expect": ["worst", "most", "worse", "aggravat"] },
+        { "key": "hours", "expect": ["8", "10", "eight", "ten"] }
+      ]
+    },
+    {
+      "id": "hg-037",
+      "text": "Kandhe se neeche haath tak dard jaata hai, ungliyon tak nahi.",
+      "facts": [
+        { "key": "shoulder", "expect": ["shoulder"] },
+        { "key": "arm", "expect": ["arm", "upper arm"] },
+        { "key": "not_fingers", "expect": ["not", "no", "does not", "doesn't", "stops", "above"] }
+      ],
+      "note": "Radiation stopping above the elbow versus reaching the fingers is the shoulder-versus-cervical-root discriminator. Dropping the negation flips the routing."
+    },
+    {
+      "id": "hg-038",
+      "text": "Jodo mein bhi dard hai, ghutne, kandhe, sab jagah. Thakan bhi bahut rehti hai.",
+      "facts": [
+        { "key": "multiple_joints", "expect": ["joint", "knee", "shoulder", "multiple", "many"] },
+        { "key": "widespread", "expect": ["everywhere", "all over", "widespread", "many", "multiple"] },
+        { "key": "fatigue", "expect": ["fatigue", "tired", "tiredness", "exhaust"] }
+      ]
+    },
+    {
+      "id": "hg-039",
+      "text": "Ayurvedic dawai le raha hoon 6 mahine se. Thoda aaram hai par pura nahi.",
+      "facts": [
+        { "key": "ayurvedic", "expect": ["ayurved", "herbal", "traditional", "alternative"] },
+        { "key": "duration", "expect": ["6 month", "six month"] },
+        { "key": "partial_relief", "expect": ["some", "little", "partial", "not complete", "not full"] }
+      ]
+    },
+    {
+      "id": "hg-040",
+      "text": "Kamar se zyada groin mein dard hota hai. Socks pehnne mein dikkat hoti hai.",
+      "facts": [
+        { "key": "groin_dominant", "expect": ["groin"] },
+        { "key": "more_than_back", "expect": ["more than", "rather than", "than the back", "dominant", "worse than"] },
+        { "key": "socks", "expect": ["sock", "shoe", "dress"] }
+      ],
+      "note": "Groin-dominant pain with dressing difficulty is the hip-versus-spine discriminator, and the whole basis of the GREY_HIP routing."
+    },
+    {
+      "id": "hg-041",
+      "text": "Kal se pair bilkul uth nahi raha, ghisat ke chal raha hoon.",
+      "facts": [
+        { "key": "acute_onset", "expect": ["yesterday", "since yesterday", "a day"] },
+        { "key": "weakness", "expect": ["weak", "cannot lift", "can't lift", "unable to lift", "not lift"] },
+        { "key": "foot_drag", "expect": ["drag", "dragging", "scrap", "shuffl"] }
+      ],
+      "mustNotContain": ["no weakness", "normal power", "denies weakness"],
+      "note": "Foot drop of one day's standing. A model that softens this loses an emergency."
+    },
+    {
+      "id": "hg-042",
+      "text": "Kaam chhod diya hai 3 mahine se, ghar pe hi rehta hoon. Paise ki dikkat ho rahi hai.",
+      "facts": [
+        { "key": "stopped_work", "expect": ["stopped work", "left work", "quit", "not working", "gave up work"] },
+        { "key": "duration", "expect": ["3 month", "three month"] },
+        { "key": "financial", "expect": ["money", "financial", "income", "earning"] }
+      ]
+    },
+    {
+      "id": "hg-043",
+      "text": "Dard 8 hai 10 mein se. Raat ko sabse zyada.",
+      "facts": [
+        { "key": "severity", "expect": ["8", "eight"] },
+        { "key": "scale", "expect": ["10", "ten"] },
+        { "key": "night_worst", "expect": ["night", "worst at night", "night time"] }
+      ]
+    },
+    {
+      "id": "hg-044",
+      "text": "Aage jhukne se aaram milta hai, seedha khade hone se dard badhta hai.",
+      "facts": [
+        { "key": "flexion_relief", "expect": ["bend", "forward", "flexion", "lean"] },
+        { "key": "relief", "expect": ["relief", "better", "eases", "helps"] },
+        { "key": "extension_worse", "expect": ["stand", "straight", "upright", "extension", "worse"] }
+      ]
+    },
+    {
+      "id": "hg-045",
+      "text": "X-ray karaya tha par doctor ne bola kuch nahi hai. Phir bhi dard kam nahi hua.",
+      "facts": [
+        { "key": "xray", "expect": ["x-ray", "xray", "radiograph"] },
+        { "key": "normal_result", "expect": ["normal", "nothing", "clear", "no abnormal"] },
+        { "key": "persistent_pain", "expect": ["still", "persist", "continue", "not reduce", "remains"] }
+      ]
+    },
+    {
+      "id": "hg-046",
+      "text": "Neend puri nahi hoti, dard se 3-4 baar utha deta hai raat mein.",
+      "facts": [
+        { "key": "sleep_disturbed", "expect": ["sleep", "insomnia"] },
+        { "key": "wakes", "expect": ["wake", "waking", "wakes"] },
+        { "key": "frequency", "expect": ["3", "4", "three", "four"] }
+      ],
+      "mustNotContain": ["sleeps well", "sleep is undisturbed", "no sleep disturbance"]
+    },
+    {
+      "id": "hg-047",
+      "text": "Bethe bethe pair sunn ho jaata hai, khade hone pe theek hota hai.",
+      "facts": [
+        { "key": "sitting_trigger", "expect": ["sit", "sitting", "seated"] },
+        { "key": "numbness", "expect": ["numb", "sensation", "dead"] },
+        { "key": "standing_relief", "expect": ["stand", "standing", "getting up"] }
+      ]
+    },
+    {
+      "id": "hg-048",
+      "text": "Bahar ka koi ilaaj nahi karaya hai, seedha aapke paas aaya hoon.",
+      "facts": [
+        { "key": "no_prior_treatment", "expect": ["no treatment", "not had", "no prior", "nothing", "no other"] },
+        { "key": "first_contact", "expect": ["directly", "straight", "came to you", "first"] }
+      ]
+    },
+    {
+      "id": "hg-049",
+      "text": "Sardi ke mausam mein dard bahut badh jaata hai, garmi mein theek rehta hai.",
+      "facts": [
+        { "key": "cold_worse", "expect": ["cold", "winter", "chill"] },
+        { "key": "worse", "expect": ["worse", "increase", "aggravat", "more"] },
+        { "key": "warm_better", "expect": ["summer", "warm", "heat", "hot"] }
+      ]
+    },
+    {
+      "id": "hg-050",
+      "text": "Mujhe samajh nahi aa raha kya karna chahiye. Aap jo bolenge wahi karunga.",
+      "facts": [
+        { "key": "uncertain", "expect": ["understand", "not sure", "confused", "don't know", "do not know", "unclear"] },
+        { "key": "defers", "expect": ["whatever you", "as you say", "follow your", "your advice", "you tell"] }
+      ]
+    }
+  ]
+}

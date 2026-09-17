@@ -1,0 +1,24 @@
+@import 'tailwindcss';
+
+@theme {
+  --font-sans: 'Inter', 'Noto Sans Devanagari', system-ui, sans-serif;
+}
+
+html,
+body,
+#root {
+  height: 100%;
+}
+
+/* Clinical forms are read in bright waiting rooms and printed by staff.
+   The palette is deliberately light-only — we do not follow the OS theme. */
+html {
+  color-scheme: light;
+}
+
+body {
+  background-color: white;
+  color: var(--color-slate-900);
+  font-family: var(--font-sans);
+  -webkit-text-size-adjust: 100%;
+}
