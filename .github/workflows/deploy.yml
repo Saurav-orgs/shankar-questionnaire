@@ -382,6 +382,33 @@ jobs:
             echo "pm2 daemon is running under node $PM2_NODE"
           fi
 
+          # Which port the API will actually bind.
+          #
+          # main.ts does `Number(config.get('PORT')) || 4000`, so the server's
+          # own .env decides — API_PORT above is only this workflow's guess at
+          # it. Polling the wrong port is indistinguishable from a dead API: the
+          # health check times out, and a perfectly good release gets rolled
+          # back while the new process sits there serving happily on the real
+          # port. So read PORT from the live .env and trust that over API_PORT.
+          ENV_FILE="$ROOT/$API_DIR/.env"
+          EFFECTIVE_PORT="$API_PORT"
+          if [ -f "$ENV_FILE" ]; then
+            # Anchored on PORT= so DATABASE_PORT is not picked up, and [^0-9]*
+            # after the = so the quoted and spaced forms dotenv accepts
+            # (PORT="3304", PORT = 3304) are read rather than silently missed —
+            # missing it would fall back to API_PORT and poll the wrong port.
+            # Last match wins, matching dotenv's own precedence.
+            ENV_PORT=$(sed -n 's/^[[:space:]]*PORT[[:space:]]*=[^0-9]*\([0-9][0-9]*\).*/\1/p' "$ENV_FILE" | tail -1)
+            if [ -n "$ENV_PORT" ]; then
+              EFFECTIVE_PORT="$ENV_PORT"
+            fi
+          fi
+          if [ "$EFFECTIVE_PORT" = "$API_PORT" ]; then
+            echo "API port: $EFFECTIVE_PORT"
+          else
+            echo "API port: $EFFECTIVE_PORT (from PORT in $ENV_FILE; the workflow's API_PORT default is $API_PORT)"
+          fi
+
           # The EADDRINUSE trap, learned from digital-opd: if our pm2 process
           # does not exist but the port is already taken, something else on this
           # shared box owns it. pm2 would start a second process, it would die,
@@ -389,17 +416,16 @@ jobs:
           # deploy that changed nothing. Refuse instead.
           if ! pm2 describe "$PM2_API" >/dev/null 2>&1; then
             port_taken=no
-            if command -v ss >/dev/null && ss -ltn 2>/dev/null | grep -qE "[:.]${API_PORT}[[:space:]]"; then
+            if command -v ss >/dev/null && ss -ltn 2>/dev/null | grep -qE "[:.]${EFFECTIVE_PORT}[[:space:]]"; then
               port_taken=yes
-            elif curl -s -o /dev/null --max-time 3 "http://127.0.0.1:${API_PORT}/" 2>/dev/null; then
+            elif curl -s -o /dev/null --max-time 3 "http://127.0.0.1:${EFFECTIVE_PORT}/" 2>/dev/null; then
               port_taken=yes
             fi
             if [ "$port_taken" = yes ]; then
-              echo "REFUSING TO DEPLOY: port ${API_PORT} is already in use, but"
+              echo "REFUSING TO DEPLOY: port ${EFFECTIVE_PORT} is already in use, but"
               echo "  there is no pm2 process named '${PM2_API}'."
               echo "  Something else on this box owns the port. Either stop it,"
-              echo "  or change API_PORT in this workflow and PORT in"
-              echo "  ${ROOT}/${API_DIR}/.env to a free port."
+              echo "  or set PORT in ${ENV_FILE} to a free port."
               echo "  pm2 list:"
               pm2 list || true
               exit 1
@@ -512,11 +538,25 @@ jobs:
           # ---------- Health check + auto-rollback ----------
           # The API runs migrations and seeds the questionnaire on boot, so a
           # first start against a new database does real work before answering.
-          if wait_healthy "http://127.0.0.1:${API_PORT}${HEALTH_PATH}" 20 "API"; then
+          if wait_healthy "http://127.0.0.1:${EFFECTIVE_PORT}${HEALTH_PATH}" 20 "API"; then
             echo "Deployment successful."
             rm -rf "${ROOT:?}/${API_DIR:?}-old"
           else
-            echo "API health check failed."
+            echo "API health check failed on http://127.0.0.1:${EFFECTIVE_PORT}${HEALTH_PATH}"
+            echo "--- is anything listening on ${EFFECTIVE_PORT}? ---"
+            if command -v ss >/dev/null; then
+              ss -ltnp 2>/dev/null | grep -E "[:.]${EFFECTIVE_PORT}[[:space:]]" || echo "  nothing is listening on ${EFFECTIVE_PORT}"
+            fi
+            echo "--- ports this pm2 process is actually serving ---"
+            # If the API is up on a DIFFERENT port, the health check was simply
+            # pointed at the wrong one: fix PORT in the .env (or API_PORT in the
+            # workflow) rather than hunting for a crash that did not happen.
+            if command -v ss >/dev/null; then
+              ss -ltnp 2>/dev/null | grep -i node || echo "  no node listeners found"
+            fi
+            echo "--- pm2 status ---"
+            pm2 list || true
+            echo "--- pm2 logs ---"
             pm2 logs "$PM2_API" --lines 50 --nostream || true
             if [ -d "$ROOT/$API_DIR-old" ]; then
               echo "Rolling back to the previous API release..."
