@@ -7,10 +7,10 @@ export default defineConfig({
   server: {
     port: 5178,
     strictPort: true,
-    // Same-origin `/api` for local browser checks: set VITE_API_BASE_URL=/api
-    // and the dev server forwards to the API, so the API's CORS allowlist can
-    // stay pointed at the dev tunnel. Dev only — production builds never use
-    // this.
+    // Dev-only proxy, currently unused: src/lib/api.ts holds an absolute API
+    // URL, so requests go straight there and never through this. Kept because
+    // it is how you point the app at a local API — change that baseURL to
+    // '/api' and the dev server forwards to localhost:4000.
     proxy: {
       '/api': { target: 'http://localhost:4000', changeOrigin: true },
     },

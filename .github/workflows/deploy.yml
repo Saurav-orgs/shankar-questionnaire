@@ -3,9 +3,9 @@ name: Deploy to Production
 on:
   push:
     branches: [main]
-  # Deploys are also startable by hand, which is how you ship a rebuild after
-  # changing API_BASE_URL (a repository variable, not code — so no commit would
-  # otherwise trigger one).
+  # Deploys are also startable by hand — to redeploy the current main after a
+  # server-side change (a new .env value, a node upgrade) without an empty
+  # commit, and to retry a run that failed in the deploy job.
   workflow_dispatch:
 
 concurrency:
@@ -97,22 +97,6 @@ jobs:
         with:
           node-version-file: .nvmrc
 
-      # Unlike digital-opd, where the API URL is hardcoded in source, both web
-      # apps here read `import.meta.env.VITE_API_BASE_URL`, which Vite inlines
-      # at BUILD time. Unset, they fall back to http://localhost:4000/api and
-      # ship a bundle that silently cannot reach the API — so fail here instead.
-      - name: Require API_BASE_URL
-        run: |
-          if [ -z "${{ vars.API_BASE_URL }}" ]; then
-            echo "ERROR: repository variable API_BASE_URL is not set."
-            echo "Both web apps inline it at build time; without it they would"
-            echo "be built pointing at http://localhost:4000/api."
-            echo "Set it under Settings -> Secrets and variables -> Actions ->"
-            echo "Variables, e.g. API_BASE_URL=https://api.example.com/api"
-            exit 1
-          fi
-          echo "Building web apps against ${{ vars.API_BASE_URL }}"
-
       # ---------- API (NestJS) ----------
       - name: Install api deps
         working-directory: api
@@ -153,10 +137,12 @@ jobs:
         working-directory: patient-web
         run: npm ci
 
+      # The API base URL is hardcoded in the source — patient-web and
+      # doctor-web each set it in src/lib/api.ts — and is not read from the
+      # environment, so there is nothing to inject here. Change the URL in
+      # those two files; setting anything in CI does nothing.
       - name: Build patient-web
         working-directory: patient-web
-        env:
-          VITE_API_BASE_URL: ${{ vars.API_BASE_URL }}
         run: npm run build
 
       - name: Zip patient-web dist
@@ -168,10 +154,9 @@ jobs:
         working-directory: doctor-web
         run: npm ci
 
+      # Same story as patient-web above: the URL lives in src/lib/api.ts.
       - name: Build doctor-web
         working-directory: doctor-web
-        env:
-          VITE_API_BASE_URL: ${{ vars.API_BASE_URL }}
         run: npm run build
 
       - name: Zip doctor-web dist
