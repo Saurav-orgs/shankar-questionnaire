@@ -46,7 +46,7 @@ export type ConditionOperator =
 export interface LeafCondition {
   /**
    * A question key, or one of the derived facts merged into the evaluation
-   * context: `age`, `gender`, `primary_complaint`.
+   * context: `age`, `gender`, and — for category rules only — `score`.
    */
   q: string;
   op: ConditionOperator;
@@ -131,31 +131,84 @@ export interface QuestionnaireSchema {
  * Rules
  * ------------------------------------------------------------------ */
 
-export type TriageCategory = 'RED' | 'AMBER' | 'GREY' | 'GREEN';
+/**
+ * Dr. Acharya's appointment categories, in priority order. The codes are
+ * stable identifiers; the doctor's own labels (RED / A / B / C / D) live in
+ * `triage/categories.ts`.
+ *
+ *   URGENT      🔴 RED — urgent/emergency assessment, not a routine slot
+ *   SURGICAL    🟢 A   — high priority surgical evaluation
+ *   REVIEW      🟡 B   — possible surgical case: review reports, then book
+ *   ROUTINE     ⚪ C   — routine / low surgical priority
+ *   REPORT_ONLY ⚫ D   — report-only / second-opinion request
+ */
+export type TriageCategory =
+  | 'URGENT'
+  | 'SURGICAL'
+  | 'REVIEW'
+  | 'ROUTINE'
+  | 'REPORT_ONLY';
 
-export type TriageUrgency = 'emergency' | 'urgent' | 'routine' | 'non_urgent';
+export const TRIAGE_CATEGORIES: TriageCategory[] = [
+  'URGENT',
+  'SURGICAL',
+  'REVIEW',
+  'ROUTINE',
+  'REPORT_ONLY',
+];
 
-export interface TriageRule {
+/** `priority` sits between urgent and routine — the SURGICAL bucket's slot. */
+export type TriageUrgency =
+  | 'emergency'
+  | 'urgent'
+  | 'priority'
+  | 'routine'
+  | 'non_urgent';
+
+interface RuleBase {
   code: string;
   label: string;
-  category: TriageCategory;
-  urgency: TriageUrgency;
-  /** Higher wins when several rules match. */
-  severity: number;
-  /** What the doctor should do. Shown verbatim in the dashboard. */
-  pathway: string;
   /** Why this fired, in plain English, for the doctor to audit. */
   explain: string;
   when: Condition;
   /** Non-blocking observation added to the report when this rule matches. */
   secondaryNote?: string;
-  /**
-   * Advisory rules contribute only their `secondaryNote`. They never set the
-   * category and never count as a match for `unmatched` detection — they exist
-   * to say "also worth a look" without competing with the real verdict.
-   */
-  advisory?: boolean;
 }
+
+/**
+ * A finding from the doctor's scoring table. Every matching scoring rule
+ * adds its points to the patient's score; the total is then exposed to the
+ * category rules as the derived fact `score`.
+ */
+export interface ScoringRule extends RuleBase {
+  kind: 'score';
+  points: number;
+}
+
+/**
+ * Sets the category. Several may match; the highest severity wins, so the
+ * severity bands double as precedence (RED > A > D > B > C). Score bands are
+ * category rules too — they condition on `score`.
+ */
+export interface CategoryRule extends RuleBase {
+  kind: 'category';
+  category: TriageCategory;
+  urgency: TriageUrgency;
+  severity: number;
+  /** What the team should do. Shown verbatim in the dashboard. */
+  pathway: string;
+}
+
+/**
+ * Advisory rules contribute only their `secondaryNote`. They never set the
+ * category or the score — they exist to say "also worth a look".
+ */
+export interface AdvisoryRule extends RuleBase {
+  kind: 'advisory';
+  secondaryNote: string;
+}
+
+export type TriageRule = ScoringRule | CategoryRule | AdvisoryRule;
 
 export interface RuleSet {
   version: number;
@@ -173,7 +226,8 @@ export type AnswerMap = Record<string, AnswerValue>;
 /**
  * Answers plus the patient-detail columns merged in under their schema keys,
  * so a condition can reference `age` or `gender` the same way it references
- * any other question. Values may be absent, which every operator treats as
+ * any other question. The rules engine adds `score` before evaluating the
+ * category rules. Values may be absent, which every operator treats as
  * "unknown" rather than as a match.
  */
 export type EvaluationContext = Record<string, AnswerValue | undefined>;

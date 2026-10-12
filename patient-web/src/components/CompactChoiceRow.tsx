@@ -1,15 +1,17 @@
 import type { LocalizedOption } from '../lib/api'
 
-/** Compact label + inline pill buttons, used for the red-flag checklist so
- * ten questions fit on one screen instead of ten. */
+/** Compact label + inline pill buttons, so the yes/no questions on a page
+ * take one row each instead of a stack of radio cards. */
 export function CompactChoiceRow({
   label,
+  help,
   options,
   value,
   onChange,
   error,
 }: {
   label: string
+  help?: string
   options: LocalizedOption[]
   value: string | undefined
   onChange: (code: string) => void
@@ -22,7 +24,8 @@ export function CompactChoiceRow({
         (error ? 'border-red-300 bg-red-50' : 'border-slate-200 bg-white')
       }
     >
-      <p className="mb-2.5 text-sm leading-snug text-slate-800">{label}</p>
+      <p className={(help ? 'mb-1 ' : 'mb-2.5 ') + 'text-sm leading-snug text-slate-800'}>{label}</p>
+      {help && <p className="mb-2.5 text-xs leading-snug text-slate-500">{help}</p>}
       <div className="flex gap-2">
         {options.map((opt) => (
           <button

@@ -13,9 +13,21 @@ export function buildMigrator(sequelize: Sequelize) {
     query: (sql: string) => sequelize.query(sql),
   };
 
+  // Under ts-node the migrations are .ts files; in the compiled dist they are
+  // .js. Match both, and always record the `.ts` name — that is what existing
+  // databases already hold, so a dist build must not re-run them.
   return new Umzug({
     migrations: {
-      glob: ['migrations/*.ts', { cwd: __dirname }],
+      glob: ['migrations/*.{ts,js}', { cwd: __dirname, ignore: ['**/*.d.ts'] }],
+      resolve: ({ name, path, context }) => {
+        // eslint-disable-next-line @typescript-eslint/no-var-requires
+        const migration = require(path as string);
+        return {
+          name: name.replace(/\.js$/, '.ts'),
+          up: () => migration.up({ name, path, context }),
+          down: () => migration.down({ name, path, context }),
+        };
+      },
     },
     context,
     storage: new SequelizeStorage({ sequelize, tableName: 'migrations' }),

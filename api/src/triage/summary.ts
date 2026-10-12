@@ -3,16 +3,29 @@ import type {
   EvaluationContext,
   QuestionnaireSchema,
 } from '../questionnaire/types';
+import { CATEGORY_INFO, categoryHeadline } from './categories';
 import type { RedFlagAnswer, TriageEvaluation } from './rules-engine';
 
 /**
- * Deterministic, template-built summary — the guaranteed fallback from plan.md
- * §9. An LLM pass can replace the body later, but the doctor must never open a
- * patient to a blank card, so this always produces something usable and is what
- * runs while ANTHROPIC_API_KEY is unset.
+ * Deterministic, template-built summary in exactly the format the team gets
+ * on WhatsApp (SCREENING §6):
  *
- * It states facts the patient reported and the rule verdict; it does not add
- * clinical inference of its own beyond what the matched rules already say.
+ *   SPINE APPOINTMENT TRIAGE
+ *   Patient: Mr. ABC, 54 yrs
+ *   Category: 🟢 A – HIGH PRIORITY SURGICAL EVALUATION
+ *   Score: 11
+ *
+ *   Key findings:
+ *   • Back + leg pain
+ *   • ...
+ *
+ *   Action: Priority appointment with Dr. Acharya
+ *   MRI/CT: To be brought/uploaded
+ *   Final decision: Dr. Acharya after physical examination
+ *
+ * It is the guaranteed fallback from plan.md §9 — the doctor must never open
+ * a patient to a blank card — and it states only what the patient reported
+ * and what the rules concluded, never a clinical inference of its own.
  */
 export function buildTemplateSummary(
   schema: QuestionnaireSchema,
@@ -20,128 +33,160 @@ export function buildTemplateSummary(
   evaluation: TriageEvaluation,
   redFlags: RedFlagAnswer[],
 ): string {
+  void redFlags; // Q2/Q3 are rendered from the answers below, positives and negatives alike.
   const labels = buildLabelLookup(schema);
   const lines: string[] = [];
 
-  const age = context.age ? `${String(context.age)}y` : 'age unknown';
-  const sex = context.gender ? String(context.gender) : 'sex unknown';
-  const occupation = context.occupation
-    ? labels.answerLabel('occupation', context.occupation)
-    : null;
-
-  const snapshot = [`${age} ${sex}`, occupation].filter(Boolean).join(', ');
-  lines.push(snapshot + '.');
-
-  const main = context.primary_complaint ?? firstComplaint(context);
-  if (main) {
-    const duration = context.lbp_duration ?? context.neck_duration;
-    const durationText = duration
-      ? ` for ${labels.answerLabel('lbp_duration', duration).toLowerCase()}`
-      : '';
-    lines.push(
-      `Main complaint: ${labels.answerLabel('chief_complaint', main).toLowerCase()}${durationText}.`,
-    );
-  }
-
-  const findings = keyFindings(labels, context);
-  if (findings.length) lines.push('Key findings: ' + findings.join('; ') + '.');
-
-  const positiveFlags = redFlags.filter(
-    (f) => f.answer !== 'No' && f.answer !== 'Not answered',
+  lines.push('SPINE APPOINTMENT TRIAGE');
+  lines.push(`Patient: ${patientLine(context)}`);
+  lines.push(`Category: ${categoryHeadline(evaluation.category)}`);
+  lines.push(`Score: ${evaluation.score}`);
+  lines.push('');
+  lines.push('Key findings:');
+  for (const finding of keyFindings(labels, context)) lines.push(`• ${finding}`);
+  lines.push('');
+  lines.push(`Action: ${CATEGORY_INFO[evaluation.category].action}`);
+  lines.push(
+    `MRI/CT: ${
+      context.has_imaging === 'yes'
+        ? 'To be brought/uploaded'
+        : context.has_imaging === 'no'
+          ? 'None available'
+          : 'Not stated'
+    }`,
   );
-  if (positiveFlags.length) {
-    lines.push(
-      'Red flags: ' +
-        positiveFlags.map((f) => `${flagShort(f.key)} (${f.answer})`).join(', ') +
-        '.',
-    );
-  } else {
-    lines.push('Red flags: none reported.');
-  }
+  lines.push('Final decision: Dr. Acharya after physical examination');
 
-  if (evaluation.matchedRules.length) {
-    lines.push(
-      'Supporting the verdict: ' +
-        evaluation.matchedRules.map((r) => r.explain).join(' ') ,
-    );
-  } else {
-    lines.push(
-      'No rule pattern matched — this case needs manual clinical triage.',
-    );
-  }
-
-  if (evaluation.secondaryNotes.length) {
-    lines.push('Also: ' + evaluation.secondaryNotes.join(' '));
+  if (evaluation.unmatched) {
+    lines.push('');
+    lines.push('No category rule matched — this case needs manual triage.');
   }
 
   return lines.join('\n');
 }
 
-function firstComplaint(context: EvaluationContext): string | null {
-  const cc = context.chief_complaint;
-  if (Array.isArray(cc) && cc.length) return String(cc[0]);
-  return null;
+function patientLine(context: EvaluationContext): string {
+  const title =
+    context.gender === 'male' ? 'Mr. ' : context.gender === 'female' ? 'Mrs. ' : '';
+  const name = context.name ? String(context.name) : 'Name not given';
+  const age = context.age ? `, ${String(context.age)} yrs` : '';
+  const city = context.city ? ` (${String(context.city)})` : '';
+  return `${title}${name}${age}${city}`;
 }
 
+const PROBLEM_SHORT: Record<string, string> = {
+  neck_pain: 'Neck pain',
+  back_pain: 'Back pain',
+  arm_pain: 'arm pain',
+  leg_pain: 'leg pain',
+};
+
+const DURATION_SHORT: Record<string, string> = {
+  lt_6w: 'Symptoms < 6 weeks',
+  '6w_3m': 'Symptoms 6 weeks – 3 months',
+  '3_6m': 'Symptoms 3–6 months',
+  gt_6m: 'Symptoms > 6 months',
+};
+
+const RESPONSE_SHORT: Record<string, string> = {
+  improved: 'significant improvement',
+  partial: 'partial improvement',
+  no_improvement: 'failed (no improvement)',
+  worse: 'symptoms getting worse',
+};
+
+/**
+ * One bullet per fact the team needs, positives and negatives alike, in the
+ * order of the doctor's own examples: pain pattern, neurology, duration,
+ * treatment, imaging, diagnosis, surgery advice, reason.
+ */
 function keyFindings(
   labels: ReturnType<typeof buildLabelLookup>,
   context: EvaluationContext,
 ): string[] {
   const out: string[] = [];
+  const problems = Array.isArray(context.main_problem)
+    ? context.main_problem.map(String)
+    : [];
 
-  if (context.lbp_radiate && context.lbp_radiate !== 'none') {
+  const axial = problems.filter((p) => p === 'neck_pain' || p === 'back_pain');
+  const radiating = problems.filter((p) => p === 'arm_pain' || p === 'leg_pain');
+  if (axial.length || radiating.length) {
+    const parts = [...axial, ...radiating].map((p) => PROBLEM_SHORT[p]);
+    const onlyAxial = radiating.length === 0;
     out.push(
-      `pain radiates ${labels.answerLabel('lbp_radiate', context.lbp_radiate).toLowerCase()}`,
+      parts.length === 1 && onlyAxial
+        ? `${parts[0]} only`
+        : parts.join(' + ').replace(/^./, (c) => c.toUpperCase()),
     );
   }
-  if (context.neck_radiate && context.neck_radiate !== 'none') {
-    out.push(
-      `arm pain ${labels.answerLabel('neck_radiate', context.neck_radiate).toLowerCase()}`,
+  if (!radiating.length && problems.length) out.push('No radiating arm/leg pain');
+  if (problems.includes('numbness_tingling')) out.push('Numbness/tingling');
+  if (problems.includes('deformity')) out.push('Spine deformity');
+  if (problems.includes('injury')) out.push('Spine injury/fracture');
+  if (problems.includes('other') && context.main_problem_other) {
+    out.push(`Other: "${String(context.main_problem_other).trim()}"`);
+  }
+
+  if (context.weakness === 'no') out.push('No weakness');
+  if (context.weakness === 'stable') out.push('Arm/leg weakness (stable)');
+  if (context.weakness === 'progressive') out.push('Progressive arm/leg weakness');
+
+  if (context.walking_balance === 'no') out.push('No walking difficulty');
+  if (context.walking_balance === 'yes') out.push('Walking/balance difficulty');
+  if (context.walking_balance === 'progressive') {
+    out.push('Walking/balance getting progressively worse');
+  }
+
+  if (context.duration) {
+    out.push(DURATION_SHORT[String(context.duration)] ?? String(context.duration));
+  }
+
+  const treatment = Array.isArray(context.treatment)
+    ? context.treatment.map(String)
+    : [];
+  if (treatment.includes('none')) {
+    out.push('No treatment yet');
+  } else if (treatment.length) {
+    const tried = treatment
+      .filter((t) => t !== 'previous_surgery')
+      .map((t) => labels.answerLabel('treatment', t));
+    const response = context.treatment_response
+      ? ` — ${RESPONSE_SHORT[String(context.treatment_response)] ?? labels.answerLabel('treatment_response', context.treatment_response).toLowerCase()}`
+      : '';
+    if (tried.length) out.push(`${tried.join('/')}${response}`);
+    if (treatment.includes('previous_surgery')) out.push('Previous spine surgery');
+  }
+
+  if (context.has_imaging === 'yes') out.push('MRI/CT/X-ray available');
+  if (context.has_imaging === 'no') out.push('No imaging');
+
+  const diagnosis = Array.isArray(context.diagnosis)
+    ? context.diagnosis.map(String).filter((d) => d !== 'dont_know')
+    : [];
+  if (diagnosis.length) {
+    const named = diagnosis.map((d) =>
+      d === 'other' && context.diagnosis_other
+        ? `other ("${String(context.diagnosis_other).trim()}")`
+        : labels.answerLabel('diagnosis', d).toLowerCase(),
     );
+    out.push(`Diagnosis mentioned: ${named.join(', ')}`);
   }
-  if (context.lbp_severity !== undefined && context.lbp_severity !== null) {
-    out.push(`pain ${String(context.lbp_severity)}/10`);
-  } else if (
-    context.neck_severity !== undefined &&
-    context.neck_severity !== null
-  ) {
-    out.push(`pain ${String(context.neck_severity)}/10`);
+
+  if (context.surgery_advised === 'yes') {
+    const detail = context.surgery_advised_detail
+      ? `: ${String(context.surgery_advised_detail).trim()}`
+      : '';
+    out.push(`Surgery advised${detail}`);
   }
-  if (context.lbp_numbness === 'yes' || context.lbp_weakness === 'yes') {
-    out.push('leg numbness/weakness');
+
+  if (context.consult_reason) {
+    out.push(`Reason: ${labels.answerLabel('consult_reason', context.consult_reason)}`);
   }
-  if (context.func_work && context.func_work !== 'fully') {
-    out.push(
-      `work: ${labels.answerLabel('func_work', context.func_work).toLowerCase()}`,
-    );
-  }
-  if (
-    Array.isArray(context.tx_tried) &&
-    !context.tx_tried.includes('nothing') &&
-    context.tx_tried.length
-  ) {
-    out.push(
-      `tried ${context.tx_tried.map((t) => labels.answerLabel('tx_tried', t).toLowerCase()).join(', ')}`,
-    );
-  }
+
+  if (context.previous_patient === 'yes') out.push('Previous patient of Dr. Acharya');
+
   return out;
-}
-
-/** Compact human label for a red-flag key, for the summary line. */
-function flagShort(key: string): string {
-  const map: Record<string, string> = {
-    rf_bladder: 'bladder',
-    rf_bowel: 'bowel',
-    rf_saddle: 'saddle numbness',
-    rf_progressive_weakness: 'progressive weakness',
-    rf_trauma: 'recent trauma',
-    rf_fever: 'fever',
-    rf_cancer: 'cancer history',
-    rf_weight_loss: 'weight loss',
-    rf_night_pain: 'night pain',
-    rf_immuno: 'immunosuppression',
-  };
-  return map[key] ?? key;
 }
 
 /** answered visible / total visible, clamped 0..1. */

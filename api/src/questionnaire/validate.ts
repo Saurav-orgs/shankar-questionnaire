@@ -7,11 +7,12 @@ import type {
 } from './types';
 
 /**
- * Derived facts merged into the evaluation context from the assessments table
- * rather than from `answers`. Conditions may reference these even though they
- * are also asked as questions.
+ * Derived facts merged into the evaluation context rather than read from
+ * `answers`: `age` and `gender` come from the assessments table (and are also
+ * asked as questions); `score` is computed by the rules engine from the
+ * scoring rules and is only meaningful to category rules.
  */
-const DERIVED_FACTS = new Set(['age', 'gender']);
+const DERIVED_FACTS = new Set(['age', 'gender', 'score']);
 
 const VALUE_CHECKED_OPERATORS = new Set([
   'eq',
@@ -158,14 +159,24 @@ export function validateQuestionnaire(
     }
     ruleCodes.add(rule.code);
 
-    if (!rule.advisory && !rule.pathway.trim()) {
+    if (rule.kind === 'category' && !rule.pathway.trim()) {
       errors.push(`Rule "${rule.code}" has no pathway.`);
     }
-    if (rule.advisory && !rule.secondaryNote?.trim()) {
+    if (rule.kind === 'advisory' && !rule.secondaryNote?.trim()) {
       errors.push(`Advisory rule "${rule.code}" has no secondaryNote.`);
     }
+    if (rule.kind === 'score' && !Number.isInteger(rule.points)) {
+      errors.push(`Scoring rule "${rule.code}" has non-integer points.`);
+    }
 
-    walkConditions(rule.when, (leaf) => checkLeaf(leaf, `Rule "${rule.code}"`));
+    walkConditions(rule.when, (leaf) => {
+      // Only the category pass sees `score`; a scoring rule that read it
+      // would be reading a total that has not been computed yet.
+      if (leaf.q === 'score' && rule.kind !== 'category') {
+        errors.push(`Rule "${rule.code}" reads "score" but is not a category rule.`);
+      }
+      checkLeaf(leaf, `Rule "${rule.code}"`);
+    });
   }
 
   return errors;

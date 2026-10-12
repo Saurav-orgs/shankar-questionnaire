@@ -42,7 +42,10 @@ export function Landing() {
 
       {doctor && (
         <div className="rounded-2xl border border-slate-200 bg-white p-5">
-          <h1 className="text-xl font-semibold text-slate-900">{doctor.fullName}</h1>
+          <p className="text-xs font-semibold uppercase tracking-wide text-blue-700">
+            {t('screeningTitle')}
+          </p>
+          <h1 className="mt-1 text-xl font-semibold text-slate-900">{doctor.fullName}</h1>
           {doctor.qualifications && (
             <p className="mt-0.5 text-sm text-slate-500">{doctor.qualifications}</p>
           )}
@@ -50,7 +53,9 @@ export function Landing() {
             <p className="mt-0.5 text-sm font-medium text-blue-700">{doctor.specialty}</p>
           )}
           {doctor.bio && (
-            <p className="mt-3 text-sm leading-relaxed text-slate-600">{doctor.bio}</p>
+            <p className="mt-3 whitespace-pre-line text-sm leading-relaxed text-slate-600">
+              {doctor.bio}
+            </p>
           )}
           {doctor.clinicName && (
             <div className="mt-4 border-t border-slate-100 pt-3 text-sm text-slate-500">

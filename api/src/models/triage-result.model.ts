@@ -11,14 +11,21 @@ import {
 import type { TriageCategory, TriageUrgency } from '../questionnaire/types';
 import { Assessment } from './assessment.model';
 
+/**
+ * Summaries are always built from the deterministic template. `'ai'` remains
+ * only so rows written before the summary model was removed still type.
+ */
 export type SummarySource = 'ai' | 'template';
 
 export interface MatchedRuleRecord {
   code: string;
   label: string;
   explain: string;
-  severity: number;
-  category: TriageCategory;
+  /** Category rules only. */
+  severity?: number;
+  category?: TriageCategory;
+  /** Scoring rules only. */
+  points?: number;
 }
 
 export interface RedFlagRecord {
@@ -49,6 +56,10 @@ export class TriageResult extends Model<TriageResult> {
 
   @Column({ type: DataType.TEXT, allowNull: false })
   declare pathway: string;
+
+  /** The SOP's administrative score. Null on rows triaged before it existed. */
+  @Column(DataType.INTEGER)
+  declare score: number | null;
 
   /** Every rule that fired, not just the winner — the doctor sees all of them. */
   @Default([])

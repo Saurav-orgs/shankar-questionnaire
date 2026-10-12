@@ -95,63 +95,52 @@ export function findContradictions(
   answers: Record<string, AnswerValue>,
 ): string[] {
   const notes: string[] = [];
-  const complaints = Array.isArray(answers.chief_complaint)
-    ? answers.chief_complaint.map(String)
-    : [];
 
-  const answered = (key: string) =>
-    answers[key] !== undefined && answers[key] !== null && answers[key] !== '';
+  const listOf = (key: string): string[] =>
+    Array.isArray(answers[key]) ? (answers[key] as unknown[]).map(String) : [];
 
-  if (
-    complaints.length > 0 &&
-    !complaints.some((c) =>
-      ['low_back_pain', 'leg_pain', 'walking_difficulty'].includes(c),
-    ) &&
-    answered('lbp_duration') &&
-    answers.symptom_area !== 'back_leg' &&
-    answers.symptom_area !== 'both'
-  ) {
+  const problems = listOf('main_problem');
+  const treatment = listOf('treatment');
+
+  if (problems.includes('weakness') && answers.weakness === 'no') {
     notes.push(
-      'Did not report back or leg pain, but answered the back and leg questions.',
+      'Selected "weakness in arm/leg" as a main problem, but answered no to weakness.',
     );
   }
 
-  if (answers.lbp_radiate === 'none' && answers.lbp_side) {
-    notes.push('Reported no radiating pain, but also named a side.');
-  }
-
-  if (
-    Array.isArray(answers.tx_tried) &&
-    answers.tx_tried.map(String).includes('nothing') &&
-    answers.tx_tried.length > 1
-  ) {
-    notes.push('Selected "nothing yet" alongside other treatments.');
-  }
-
-  if (
-    Array.isArray(answers.comorbidities) &&
-    answers.comorbidities.map(String).includes('none') &&
-    answers.comorbidities.length > 1
-  ) {
-    notes.push('Selected "none of these" alongside other conditions.');
-  }
-
-  if (
-    Array.isArray(answers.img_done) &&
-    answers.img_done.map(String).includes('none') &&
-    answers.img_done.length > 1
-  ) {
-    notes.push('Selected "no scans done" alongside specific scans.');
-  }
-
-  // Someone answering yes to everything is a known intake pattern that wastes
-  // clinical time; surfacing it is more useful than silently trusting it.
-  const redFlagKeys = Object.keys(answers).filter((k) => k.startsWith('rf_'));
-  const yesCount = redFlagKeys.filter((k) => answers[k] === 'yes').length;
-  if (redFlagKeys.length >= 8 && yesCount >= 7) {
+  if (problems.includes('walking_balance') && answers.walking_balance === 'no') {
     notes.push(
-      `Answered yes to ${yesCount} of ${redFlagKeys.length} red-flag questions — verify in person.`,
+      'Selected "difficulty walking/balance" as a main problem, but answered no to walking difficulty.',
     );
+  }
+
+  const diagnosis = listOf('diagnosis');
+  if (diagnosis.includes('dont_know') && diagnosis.length > 1) {
+    notes.push('Selected "don\'t know" alongside a named diagnosis.');
+  }
+
+  if (treatment.includes('none') && treatment.length > 1) {
+    notes.push('Selected "no treatment" alongside other treatments.');
+  }
+
+  if (
+    answers.surgery_advised === 'no' &&
+    answers.consult_reason === 'surgery_advised'
+  ) {
+    notes.push(
+      'Says no doctor has advised surgery, but gives "surgery has already been advised" as the reason for consultation.',
+    );
+  }
+
+  if (answers.has_imaging === 'no' && answers.consult_reason === 'report_review') {
+    notes.push('Has no imaging, but only wants a report reviewed.');
+  }
+
+  if (
+    answers.consult_reason === 'worsening_despite_treatment' &&
+    treatment.includes('none')
+  ) {
+    notes.push('Reports worsening despite treatment, but has had no treatment.');
   }
 
   return notes;

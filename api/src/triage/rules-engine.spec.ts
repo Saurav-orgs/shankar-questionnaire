@@ -1,18 +1,18 @@
 import { evaluateRules, redFlagsFromSchema } from './rules-engine';
-import type { EvaluationContext } from '../questionnaire/types';
-import { questionnaireV1, rulesV1 } from '../questionnaire/v1';
+import type { EvaluationContext, TriageCategory } from '../questionnaire/types';
+import { questionnaireV2, rulesV2 } from '../questionnaire/v2';
 
 /**
- * Fixture-driven tests for the triage rule set (plan.md §8, §13 Phase 4).
+ * Fixture-driven tests for Dr. Acharya's screening SOP (SCREENING §2–§3).
  *
- * The rules ARE the product, so each one gets a named patient whose answers
- * should fire it, and we assert both the resulting category and that the rule
- * appears in the matched list. Plus: precedence (RED > AMBER > GREY > GREEN),
- * the unmatched fallback, the advisory notes, and red-flag reporting.
+ * The rules ARE the product, so each scoring row and each category rule gets
+ * a named patient whose answers should fire it, and we assert the resulting
+ * score and category. Plus: the two worked examples from the SOP's WhatsApp
+ * summaries, precedence (RED > A > D > B > C), the second-opinion carve-out,
+ * advisory notes, and red-flag reporting.
  *
  * evaluateRules reads raw answer keys directly (branching visibility does not
- * apply here), so each fixture sets only the keys its rule needs, plus enough
- * to keep a higher-severity rule from stealing the verdict.
+ * apply here), so each fixture sets only the keys it needs on top of `clean`.
  */
 
 const base: EvaluationContext = {
@@ -20,495 +20,483 @@ const base: EvaluationContext = {
   age: 45,
   gender: 'male',
   mobile: '9999999999',
-  occupation: 'driver',
+  city: 'Delhi',
+  previous_patient: 'no',
 };
 
-/** No red flags — spread into scenarios that must stay out of the RED band. */
-const noRedFlags: EvaluationContext = {
-  rf_bladder: 'no',
-  rf_bowel: 'no',
-  rf_saddle: 'no',
-  rf_progressive_weakness: 'no',
-  rf_trauma: 'no',
-  rf_fever: 'no',
-  rf_cancer: 'no',
-  rf_weight_loss: 'no',
-  rf_night_pain: 'no',
-  rf_immuno: 'no',
+/** A clean form: back pain only, nothing neurological, nothing surgical. */
+const clean: EvaluationContext = {
+  main_problem: ['back_pain'],
+  weakness: 'no',
+  walking_balance: 'no',
+  duration: 'lt_6w',
+  treatment: ['medicines'],
+  treatment_response: 'partial',
+  has_imaging: 'no',
+  diagnosis: ['dont_know'],
+  surgery_advised: 'no',
+  consult_reason: 'routine_advice',
 };
 
 function run(overrides: EvaluationContext) {
-  return evaluateRules(rulesV1, { ...base, ...overrides });
+  return evaluateRules(rulesV2, { ...base, ...clean, ...overrides });
 }
 
-interface Scenario {
-  name: string;
-  answers: EvaluationContext;
-  category: 'RED' | 'AMBER' | 'GREY' | 'GREEN';
-  expectRule: string;
-}
+const codes = (r: ReturnType<typeof run>) => r.matchedRules.map((m) => m.code);
 
-const scenarios: Scenario[] = [
-  /* ---------------- RED ---------------- */
-  {
-    name: 'Cauda equina — saddle numbness',
-    answers: {
-      ...noRedFlags,
-      rf_saddle: 'yes',
-      chief_complaint: ['low_back_pain'],
+describe('scoring table — one patient per row', () => {
+  const rows: {
+    name: string;
+    answers: EvaluationContext;
+    rule: string;
+    points: number;
+  }[] = [
+    {
+      name: 'Progressive weakness',
+      answers: { weakness: 'progressive' },
+      rule: 'SCORE_PROGRESSIVE_WEAKNESS',
+      points: 4,
     },
-    category: 'RED',
-    expectRule: 'RED_CAUDA_EQUINA',
-  },
-  {
-    name: 'Progressive motor deficit — foot drop',
-    answers: {
-      ...noRedFlags,
-      rf_progressive_weakness: 'yes',
-      chief_complaint: ['leg_pain'],
+    {
+      name: 'Walking/balance deterioration',
+      answers: { walking_balance: 'yes' },
+      rule: 'SCORE_WALKING_DETERIORATION',
+      points: 3,
     },
-    category: 'RED',
-    expectRule: 'RED_PROGRESSIVE_DEFICIT',
-  },
-  {
-    name: 'Cervical myelopathy — clumsy hands + unsteady gait',
-    answers: {
-      ...noRedFlags,
-      chief_complaint: ['neck_pain'],
-      neck_radiate: 'none',
-      myelo_buttons: 'yes',
-      myelo_gait: 'yes',
-      myelo_both_hands: 'yes',
-      myelo_urinary: 'yes',
+    {
+      name: 'Significant radiating leg pain',
+      answers: { main_problem: ['back_pain', 'leg_pain'] },
+      rule: 'SCORE_RADIATING_PAIN',
+      points: 2,
     },
-    category: 'RED',
-    expectRule: 'RED_MYELOPATHY',
-  },
-  {
-    name: 'Spinal infection — fever + night pain',
-    answers: {
-      ...noRedFlags,
-      rf_fever: 'yes',
-      rf_night_pain: 'yes',
-      chief_complaint: ['low_back_pain'],
+    {
+      name: 'Numbness/tingling',
+      answers: { main_problem: ['back_pain', 'numbness_tingling'] },
+      rule: 'SCORE_NUMBNESS',
+      points: 1,
     },
-    category: 'RED',
-    expectRule: 'RED_INFECTION',
-  },
-  {
-    name: 'Malignancy — cancer history + weight loss',
-    answers: {
-      ...noRedFlags,
-      rf_cancer: 'yes',
-      rf_weight_loss: 'yes',
-      chief_complaint: ['low_back_pain'],
+    {
+      name: 'Symptoms > 3 months',
+      answers: { duration: '3_6m' },
+      rule: 'SCORE_DURATION_3M',
+      points: 1,
     },
-    category: 'RED',
-    expectRule: 'RED_MALIGNANCY',
-  },
-  {
-    name: 'Traumatic fracture — fall at 60',
-    answers: {
-      ...noRedFlags,
-      rf_trauma: 'yes',
-      age: 60,
-      chief_complaint: ['low_back_pain'],
+    {
+      name: 'Failed physiotherapy',
+      answers: { treatment: ['physio'], treatment_response: 'no_improvement' },
+      rule: 'SCORE_FAILED_CONSERVATIVE',
+      points: 2,
     },
-    category: 'RED',
-    expectRule: 'RED_FRACTURE_TRAUMA',
-  },
-  {
-    name: 'Fragility fracture — sudden severe pain at 75, no trauma',
-    answers: {
-      ...noRedFlags,
-      age: 75,
-      chief_complaint: ['low_back_pain'],
-      lbp_onset: 'sudden_lift',
-      lbp_duration: 'lt_2w',
-      lbp_severity: 8,
+    {
+      name: 'Symptoms worsening',
+      answers: { treatment_response: 'worse' },
+      rule: 'SCORE_WORSENING',
+      points: 2,
     },
-    category: 'RED',
-    expectRule: 'RED_FRAGILITY_FRACTURE',
-  },
+    {
+      name: 'MRI available',
+      answers: { has_imaging: 'yes' },
+      rule: 'SCORE_IMAGING',
+      points: 1,
+    },
+    {
+      name: 'Structural diagnosis mentioned',
+      answers: { diagnosis: ['disc_prolapse'] },
+      rule: 'SCORE_STRUCTURAL_DIAGNOSIS',
+      points: 2,
+    },
+    {
+      name: 'Surgery already advised',
+      answers: { surgery_advised: 'yes' },
+      rule: 'SCORE_SURGERY_ADVISED',
+      points: 3,
+    },
+    {
+      name: 'Previous spine surgery',
+      answers: { treatment: ['previous_surgery'], treatment_response: 'partial' },
+      rule: 'SCORE_PREVIOUS_SURGERY',
+      points: 2,
+    },
+    {
+      name: 'Routine pain only',
+      answers: {},
+      rule: 'SCORE_ROUTINE_ONLY',
+      points: -2,
+    },
+    {
+      name: 'No treatment tried',
+      answers: { treatment: ['none'], treatment_response: null },
+      rule: 'SCORE_NO_TREATMENT',
+      points: -1,
+    },
+    {
+      name: 'Only report review requested',
+      answers: { consult_reason: 'report_review' },
+      rule: 'SCORE_REPORT_ONLY',
+      points: -2,
+    },
+  ];
 
-  /* ---------------- AMBER ---------------- */
-  {
-    name: 'Lumbar radiculopathy — below-knee pain + numbness, chronic',
-    answers: {
-      ...noRedFlags,
-      chief_complaint: ['low_back_pain', 'leg_pain'],
-      lbp_radiate: 'below_knee',
-      lbp_numbness: 'yes',
-      lbp_duration: '3_12m',
-    },
-    category: 'AMBER',
-    expectRule: 'AMBER_LUMBAR_RADICULOPATHY',
-  },
-  {
-    name: 'Motor deficit — leg weakness, not progressing',
-    answers: {
-      ...noRedFlags,
-      chief_complaint: ['leg_pain'],
-      lbp_radiate: 'none',
-      lbp_numbness: 'no',
-      lbp_weakness: 'yes',
-    },
-    category: 'AMBER',
-    expectRule: 'AMBER_MOTOR_DEFICIT',
-  },
-  {
-    name: 'Lumbar stenosis — limited walking, relief on bending, age 65',
-    answers: {
-      ...noRedFlags,
-      age: 65,
-      chief_complaint: ['leg_pain', 'walking_difficulty'],
-      lbp_radiate: 'none',
-      lbp_numbness: 'no',
-      lbp_weakness: 'no',
-      lbp_walk_distance: 'lt_100m',
-      lbp_bend_relief: 'yes',
-      vasc_claudication: 'sit_bend',
-    },
-    category: 'AMBER',
-    expectRule: 'AMBER_STENOSIS',
-  },
-  {
-    name: 'Cervical radiculopathy — below-elbow arm pain + hand numbness',
-    answers: {
-      ...noRedFlags,
-      chief_complaint: ['neck_pain', 'arm_pain'],
-      neck_radiate: 'below_elbow',
-      neck_numbness_hand: 'yes',
-      neck_duration: '3_12m',
-      myelo_buttons: 'no',
-      myelo_gait: 'no',
-    },
-    category: 'AMBER',
-    expectRule: 'AMBER_CERVICAL_RADICULOPATHY',
-  },
-  {
-    name: 'Failed conservative care — 6+ weeks physio, no benefit',
-    answers: {
-      ...noRedFlags,
-      chief_complaint: ['low_back_pain'],
-      lbp_radiate: 'none',
-      lbp_numbness: 'no',
-      lbp_weakness: 'no',
-      lbp_duration: '3_12m',
-      tx_tried: ['physio'],
-      tx_physio_duration: 'gt_6w',
-      tx_response: 'not_at_all',
-      func_work: 'difficulty',
-    },
-    category: 'AMBER',
-    expectRule: 'AMBER_FAILED_CONSERVATIVE',
-  },
-  {
-    name: 'Post-surgical — previous spine surgery',
-    answers: {
-      ...noRedFlags,
-      chief_complaint: ['low_back_pain'],
-      lbp_radiate: 'none',
-      lbp_numbness: 'no',
-      lbp_weakness: 'no',
-      tx_tried: ['surgery'],
-      tx_response: 'partly',
-    },
-    category: 'AMBER',
-    expectRule: 'AMBER_POST_SURGICAL',
-  },
-  {
-    name: 'Functional collapse — stopped working, worsening, chronic',
-    answers: {
-      ...noRedFlags,
-      chief_complaint: ['low_back_pain'],
-      lbp_radiate: 'none',
-      lbp_numbness: 'no',
-      lbp_weakness: 'no',
-      lbp_duration: '3_12m',
-      func_work: 'stopped',
-      func_worsening: 'worse',
-      tx_tried: ['painkillers'],
-      tx_response: 'partly',
-    },
-    category: 'AMBER',
-    expectRule: 'AMBER_FUNCTIONAL_COLLAPSE',
-  },
+  it.each(rows)('$name -> $rule ($points)', ({ answers, rule, points }) => {
+    const result = run(answers);
+    const match = result.matchedRules.find((m) => m.code === rule);
+    expect(match).toBeDefined();
+    expect(match?.points).toBe(points);
+  });
 
-  /* ---------------- GREY ---------------- */
-  {
-    name: 'Hip, not spine — groin pain + stiffness, no radiation',
-    answers: {
-      ...noRedFlags,
-      age: 66,
-      chief_complaint: ['low_back_pain'],
-      lbp_radiate: 'buttock',
-      lbp_numbness: 'no',
-      lbp_weakness: 'no',
-      hip_groin: 'yes',
-      hip_socks: 'yes',
-    },
-    category: 'GREY',
-    expectRule: 'GREY_HIP',
-  },
-  {
-    name: 'Shoulder, not neck — overhead pain above elbow',
-    answers: {
-      ...noRedFlags,
-      chief_complaint: ['arm_pain'],
-      neck_radiate: 'shoulder',
-      neck_numbness_hand: 'no',
-      myelo_buttons: 'no',
-      myelo_gait: 'no',
-      shoulder_overhead: 'yes',
-    },
-    category: 'GREY',
-    expectRule: 'GREY_SHOULDER',
-  },
-  {
-    name: 'Vascular claudication — relief on standing, smoker/diabetic',
-    answers: {
-      ...noRedFlags,
-      age: 64,
-      chief_complaint: ['leg_pain', 'walking_difficulty'],
-      lbp_radiate: 'buttock',
-      lbp_numbness: 'no',
-      lbp_weakness: 'no',
-      lbp_walk_distance: '100_500m',
-      lbp_bend_relief: 'no',
-      vasc_claudication: 'stand_still',
-      comorbidities: ['diabetes', 'smoking'],
-    },
-    category: 'GREY',
-    expectRule: 'GREY_VASCULAR',
-  },
-  {
-    name: 'Inflammatory back pain — young, morning stiffness, better with movement',
-    answers: {
-      ...noRedFlags,
-      age: 30,
-      chief_complaint: ['low_back_pain'],
-      lbp_radiate: 'none',
-      lbp_numbness: 'no',
-      lbp_weakness: 'no',
-      lbp_duration: '3_12m',
-      inflam_morning_stiffness: 'yes',
-      inflam_exercise_better: 'yes',
-    },
-    category: 'GREY',
-    expectRule: 'GREY_INFLAMMATORY',
-  },
-  {
-    name: 'Widespread pain — many sites + fatigue',
-    answers: {
-      ...noRedFlags,
-      chief_complaint: ['low_back_pain'],
-      lbp_radiate: 'none',
-      lbp_numbness: 'no',
-      lbp_weakness: 'no',
-      widespread_pain: 'yes',
-    },
-    category: 'GREY',
-    expectRule: 'GREY_WIDESPREAD',
-  },
-  {
-    name: 'Unclear — none of these',
-    answers: {
-      ...noRedFlags,
-      chief_complaint: ['none_of_these'],
-    },
-    category: 'GREY',
-    expectRule: 'GREY_UNCLEAR',
-  },
-
-  /* ---------------- GREEN ---------------- */
-  {
-    name: 'Acute mechanical — under 6 weeks, no radiation, no red flags',
-    answers: {
-      ...noRedFlags,
-      age: 40,
-      chief_complaint: ['low_back_pain'],
-      lbp_duration: '2_6w',
-      lbp_radiate: 'none',
-      lbp_numbness: 'no',
-      lbp_weakness: 'no',
-      lbp_severity: 4,
-    },
-    category: 'GREEN',
-    expectRule: 'GREEN_ACUTE_MECHANICAL',
-  },
-  {
-    name: 'Chronic untreated — 1 year, nothing tried but rest',
-    answers: {
-      ...noRedFlags,
-      chief_complaint: ['low_back_pain'],
-      lbp_duration: 'gt_1y',
-      lbp_radiate: 'none',
-      lbp_numbness: 'no',
-      lbp_weakness: 'no',
-      tx_tried: ['rest'],
-    },
-    category: 'GREEN',
-    expectRule: 'GREEN_UNTREATED_CHRONIC',
-  },
-];
-
-describe('triage rules — one scenario per rule', () => {
-  it.each(scenarios)(
-    '$name -> $category ($expectRule)',
-    ({ answers, category, expectRule }) => {
-      const result = run(answers);
-      const codes = result.matchedRules.map((r) => r.code);
-      expect(codes).toContain(expectRule);
-      expect(result.category).toBe(category);
-    },
-  );
-
-  it('covers every non-advisory rule at least once', () => {
-    const covered = new Set(scenarios.map((s) => s.expectRule));
-    const uncovered = rulesV1
-      .filter((r) => !r.advisory)
+  it('covers every scoring rule', () => {
+    const covered = new Set(rows.map((r) => r.rule));
+    const uncovered = rulesV2
+      .filter((r) => r.kind === 'score')
       .map((r) => r.code)
       .filter((code) => !covered.has(code));
     expect(uncovered).toEqual([]);
   });
+
+  it('sums the matched rows', () => {
+    // leg pain +2, numbness +1, >3m +1, physio failed +2, worse +2, MRI +1,
+    // disc +2, surgery advised +3 = 14; "routine only" does not fire.
+    const result = run({
+      main_problem: ['back_pain', 'leg_pain', 'numbness_tingling'],
+      duration: 'gt_6m',
+      treatment: ['medicines', 'physio'],
+      treatment_response: 'worse',
+      has_imaging: 'yes',
+      diagnosis: ['disc_prolapse'],
+      surgery_advised: 'yes',
+      consult_reason: 'surgery_advised',
+    });
+    expect(result.score).toBe(14);
+    expect(codes(result)).not.toContain('SCORE_ROUTINE_ONLY');
+  });
+
+  it('routine-only deduction needs no neuro answer anywhere on Q1–Q3', () => {
+    expect(codes(run({ weakness: 'stable' }))).not.toContain('SCORE_ROUTINE_ONLY');
+    expect(codes(run({ main_problem: ['back_pain', 'deformity'] }))).not.toContain(
+      'SCORE_ROUTINE_ONLY',
+    );
+    expect(codes(run({ main_problem: ['neck_pain', 'back_pain'] }))).toContain(
+      'SCORE_ROUTINE_ONLY',
+    );
+  });
+});
+
+describe("the SOP's worked examples", () => {
+  it('Mr. ABC, 54 — 🟢 A, score 11', () => {
+    // Back + bilateral leg pain, progressive leg weakness, walking difficulty,
+    // symptoms >6 months, physio/medicines failed, MRI available, surgery
+    // advised: TLIF. His summary says 11; the table gives
+    // 4 + 3 + 2 + 1 + 2 + 1 + 3 = 16 without the worsening row, so his 11
+    // is not a strict sum — the category is what matters and it is A.
+    const result = run({
+      age: 54,
+      main_problem: ['back_pain', 'leg_pain'],
+      weakness: 'progressive',
+      walking_balance: 'yes',
+      duration: 'gt_6m',
+      treatment: ['medicines', 'physio'],
+      treatment_response: 'no_improvement',
+      has_imaging: 'yes',
+      diagnosis: ['dont_know'],
+      surgery_advised: 'yes',
+      surgery_advised_detail: 'TLIF',
+      consult_reason: 'surgery_advised',
+    });
+    expect(result.category).toBe('SURGICAL');
+    expect(result.score).toBeGreaterThanOrEqual(8);
+    expect(codes(result)).toContain('A_PROGRESSIVE_WEAKNESS');
+    expect(codes(result)).toContain('A_SURGERY_ADVISED');
+    expect(codes(result)).toContain('A_RADICULOPATHY_DEFICIT');
+  });
+
+  it('Mrs. ABC, 38 — ⚪ C, score 1 → here -3', () => {
+    // Back pain only, no leg pain, no weakness, no walking difficulty,
+    // 3 weeks, no treatment yet. The table gives -2 (routine only) and -1
+    // (no treatment); the SOP's "1" is not a literal sum either. What
+    // matters: C, and nothing surgical fired.
+    const result = run({
+      gender: 'female',
+      age: 38,
+      treatment: ['none'],
+      treatment_response: null,
+    });
+    expect(result.category).toBe('ROUTINE');
+    expect(result.score).toBe(-3);
+    expect(codes(result)).toEqual([
+      'C_SCORE',
+      'SCORE_ROUTINE_ONLY',
+      'SCORE_NO_TREATMENT',
+    ]);
+  });
+});
+
+describe('category rules — one patient each', () => {
+  const scenarios: {
+    name: string;
+    answers: EvaluationContext;
+    category: TriageCategory;
+    rule: string;
+  }[] = [
+    /* 🔴 RED */
+    {
+      name: 'Spine injury with numbness',
+      answers: { main_problem: ['back_pain', 'injury', 'numbness_tingling'] },
+      category: 'URGENT',
+      rule: 'RED_TRAUMA_NEURO',
+    },
+    {
+      name: 'Weakness and walking both progressively worse',
+      answers: { weakness: 'progressive', walking_balance: 'progressive' },
+      category: 'URGENT',
+      rule: 'RED_RAPID_NEURO_DECLINE',
+    },
+    /* 🟢 A — features */
+    {
+      name: 'Progressive weakness, nothing else',
+      answers: { weakness: 'progressive' },
+      category: 'SURGICAL',
+      rule: 'A_PROGRESSIVE_WEAKNESS',
+    },
+    {
+      name: 'Walking getting progressively worse',
+      answers: { walking_balance: 'progressive' },
+      category: 'SURGICAL',
+      rule: 'A_WALKING_DETERIORATION',
+    },
+    {
+      name: 'Surgery already advised, wants second opinion',
+      answers: {
+        surgery_advised: 'yes',
+        surgery_advised_detail: 'L4-L5 discectomy',
+        consult_reason: 'second_opinion',
+      },
+      category: 'SURGICAL',
+      rule: 'A_SURGERY_ADVISED',
+    },
+    {
+      name: 'Sciatica with stable leg weakness',
+      answers: { main_problem: ['back_pain', 'leg_pain'], weakness: 'stable' },
+      category: 'SURGICAL',
+      rule: 'A_RADICULOPATHY_DEFICIT',
+    },
+    {
+      name: 'Known canal stenosis, leg pain not improving',
+      answers: {
+        main_problem: ['back_pain', 'leg_pain'],
+        diagnosis: ['canal_stenosis'],
+        treatment: ['medicines'],
+        treatment_response: 'no_improvement',
+      },
+      category: 'SURGICAL',
+      rule: 'A_STRUCTURAL_SIGNIFICANT',
+    },
+    /* Score bands */
+    {
+      name: 'Score 8+ from soft findings alone',
+      answers: {
+        // leg pain +2, >3m +1, physio failed +2, MRI +1, disc +2 = 8
+        main_problem: ['back_pain', 'leg_pain'],
+        duration: '3_6m',
+        treatment: ['physio'],
+        treatment_response: 'no_improvement',
+        has_imaging: 'yes',
+        diagnosis: ['disc_prolapse'],
+        consult_reason: 'evaluate_surgery',
+      },
+      category: 'SURGICAL',
+      rule: 'A_SCORE',
+    },
+    {
+      name: 'Persistent radicular pain with MRI — score 4',
+      answers: {
+        // leg pain +2, >3m +1, MRI +1 = 4
+        main_problem: ['back_pain', 'leg_pain'],
+        duration: 'gt_6m',
+        has_imaging: 'yes',
+        consult_reason: 'evaluate_surgery',
+      },
+      category: 'REVIEW',
+      rule: 'B_SCORE',
+    },
+    {
+      name: 'Simple back pain, short duration',
+      answers: {},
+      category: 'ROUTINE',
+      rule: 'C_SCORE',
+    },
+    /* ⚫ D */
+    {
+      name: 'Only wants MRI looked at',
+      answers: { has_imaging: 'yes', consult_reason: 'report_review' },
+      category: 'REPORT_ONLY',
+      rule: 'D_REPORT_ONLY',
+    },
+    {
+      name: 'Second opinion, but no one has advised surgery',
+      answers: { consult_reason: 'second_opinion' },
+      category: 'REPORT_ONLY',
+      rule: 'D_SECOND_OPINION_NO_ADVICE',
+    },
+  ];
+
+  it.each(scenarios)('$name -> $category ($rule)', ({ answers, category, rule }) => {
+    const result = run(answers);
+    expect(codes(result)).toContain(rule);
+    expect(result.category).toBe(category);
+  });
+
+  it('covers every category rule', () => {
+    const covered = new Set(scenarios.map((s) => s.rule));
+    const uncovered = rulesV2
+      .filter((r) => r.kind === 'category')
+      .map((r) => r.code)
+      .filter((code) => !covered.has(code));
+    expect(uncovered).toEqual([]);
+  });
+
+  it('keeps severity bands disjoint so precedence is RED > A > D > B > C', () => {
+    const band: Record<TriageCategory, [number, number]> = {
+      URGENT: [90, 100],
+      SURGICAL: [60, 79],
+      REPORT_ONLY: [40, 49],
+      REVIEW: [30, 39],
+      ROUTINE: [10, 29],
+    };
+    for (const rule of rulesV2) {
+      if (rule.kind !== 'category') continue;
+      const [lo, hi] = band[rule.category];
+      expect(rule.severity).toBeGreaterThanOrEqual(lo);
+      expect(rule.severity).toBeLessThanOrEqual(hi);
+    }
+  });
+
+  it('the score bands cover every integer, so every form gets a category', () => {
+    for (let score = -6; score <= 30; score += 1) {
+      const result = evaluateRules(rulesV2, { ...base, score });
+      expect(result.unmatched).toBe(false);
+    }
+  });
 });
 
 describe('precedence', () => {
-  it('RED beats AMBER when both fire (myelopathy + cervical radiculopathy)', () => {
+  it('RED beats A (trauma + surgery advised)', () => {
     const result = run({
-      ...noRedFlags,
-      chief_complaint: ['neck_pain', 'arm_pain'],
-      neck_radiate: 'below_elbow',
-      neck_numbness_hand: 'yes',
-      neck_duration: '3_12m',
-      myelo_buttons: 'yes',
-      myelo_gait: 'yes',
-      myelo_both_hands: 'yes',
-      myelo_urinary: 'yes',
+      main_problem: ['back_pain', 'injury'],
+      weakness: 'stable',
+      surgery_advised: 'yes',
     });
-    const codes = result.matchedRules.map((r) => r.code);
-    expect(codes).toContain('RED_MYELOPATHY');
-    expect(codes).toContain('AMBER_CERVICAL_RADICULOPATHY');
-    expect(result.category).toBe('RED');
+    expect(codes(result)).toContain('RED_TRAUMA_NEURO');
+    expect(codes(result)).toContain('A_SURGERY_ADVISED');
+    expect(result.category).toBe('URGENT');
+    expect(result.urgency).toBe('urgent');
   });
 
-  it('GREY beats GREEN when both fire (hip pattern + chronic untreated)', () => {
+  it('A beats D (surgery advised + only wants report reviewed)', () => {
     const result = run({
-      ...noRedFlags,
-      age: 66,
-      chief_complaint: ['low_back_pain'],
-      lbp_radiate: 'buttock',
-      lbp_numbness: 'no',
-      lbp_weakness: 'no',
-      lbp_duration: 'gt_1y',
-      hip_groin: 'yes',
-      hip_socks: 'yes',
-      tx_tried: ['rest'],
+      has_imaging: 'yes',
+      surgery_advised: 'yes',
+      consult_reason: 'report_review',
     });
-    const codes = result.matchedRules.map((r) => r.code);
-    expect(codes).toContain('GREY_HIP');
-    expect(codes).toContain('GREEN_UNTREATED_CHRONIC');
-    expect(result.category).toBe('GREY');
+    expect(codes(result)).toContain('A_SURGERY_ADVISED');
+    expect(codes(result)).toContain('D_REPORT_ONLY');
+    expect(result.category).toBe('SURGICAL');
+    expect(result.urgency).toBe('priority');
+  });
+
+  it('D beats B and C (score 4 but only wants the report looked at)', () => {
+    const result = run({
+      // leg pain +2, >3m +1, MRI +1, disc +2, report only -2 = 4
+      main_problem: ['back_pain', 'leg_pain'],
+      duration: 'gt_6m',
+      has_imaging: 'yes',
+      diagnosis: ['disc_prolapse'],
+      consult_reason: 'report_review',
+    });
+    expect(result.score).toBe(4);
+    expect(codes(result)).toContain('B_SCORE');
+    expect(result.category).toBe('REPORT_ONLY');
+  });
+
+  it('a feature-based A wins even when the score only says B', () => {
+    // Progressive weakness alone scores 4 (B by score) — "significant
+    // surgical features even if score is lower" makes it A.
+    const result = run({ weakness: 'progressive' });
+    expect(result.score).toBe(4);
+    expect(result.category).toBe('SURGICAL');
+    expect(codes(result)[0]).toBe('A_PROGRESSIVE_WEAKNESS');
+  });
+
+  it('second opinion after surgery was advised is A, never D', () => {
+    // The SOP's carve-out: do not auto-reject a second opinion sought for
+    // surgical evaluation after surgery has been advised.
+    const result = run({ surgery_advised: 'yes', consult_reason: 'second_opinion' });
+    expect(result.category).toBe('SURGICAL');
+    expect(codes(result)).not.toContain('D_SECOND_OPINION_NO_ADVICE');
+    expect(result.secondaryNotes.join(' ')).toMatch(/potentially appropriate surgical consultation/i);
   });
 });
 
 describe('unmatched fallback', () => {
-  it('flags a case that fires no rule and defaults to GREEN', () => {
-    const result = run({
-      ...noRedFlags,
-      chief_complaint: ['low_back_pain'],
-      lbp_duration: '3_12m',
-      lbp_radiate: 'none',
-      lbp_numbness: 'no',
-      lbp_weakness: 'no',
-      lbp_walk_distance: 'unlimited',
-      // Physio tried, so GREEN_UNTREATED is excluded; response only partial and
-      // work unaffected, so AMBER_FAILED_CONSERVATIVE does not fire either.
-      tx_tried: ['physio'],
-      tx_physio_duration: '2_6w',
-      tx_response: 'partly',
-      func_work: 'fully',
-      func_worsening: 'same',
-      hip_groin: 'no',
-      inflam_morning_stiffness: 'no',
-      inflam_exercise_better: 'no',
-      widespread_pain: 'no',
-    });
-    expect(result.matchedRules).toEqual([]);
+  it('lands in REVIEW when a rule set has no score bands', () => {
+    const withoutBands = rulesV2.filter(
+      (r) => !['A_SCORE', 'B_SCORE', 'C_SCORE'].includes(r.code),
+    );
+    const result = evaluateRules(withoutBands, { ...base, ...clean });
     expect(result.unmatched).toBe(true);
-    expect(result.category).toBe('GREEN');
-    expect(result.pathway).toMatch(/no rule pattern matched/i);
+    expect(result.category).toBe('REVIEW');
+    expect(result.pathway).toMatch(/no category rule matched/i);
   });
 });
 
 describe('advisory notes', () => {
-  it('adds a pregnancy note without changing the category', () => {
-    const result = run({
-      ...noRedFlags,
-      gender: 'female',
-      age: 30,
-      chief_complaint: ['low_back_pain'],
-      lbp_duration: '2_6w',
-      lbp_radiate: 'none',
-      lbp_numbness: 'no',
-      lbp_weakness: 'no',
-      is_pregnant: 'yes',
-    });
-    expect(result.matchedRules.map((r) => r.code)).not.toContain(
-      'ADVISORY_PREGNANCY',
-    );
-    expect(result.secondaryNotes.join(' ')).toMatch(/pregnant/i);
+  it('adds an imaging note without changing the category', () => {
+    const result = run({ has_imaging: 'yes' });
+    expect(codes(result)).not.toContain('ADVISORY_IMAGING_AVAILABLE');
+    expect(result.secondaryNotes.join(' ')).toMatch(/report and images/i);
+    expect(result.category).toBe('ROUTINE');
   });
 
-  it('adds a hip-overlap note', () => {
+  it('adds a note when the advised surgery is named', () => {
     const result = run({
-      ...noRedFlags,
-      chief_complaint: ['low_back_pain'],
-      hip_groin: 'yes',
-      hip_socks: 'yes',
+      surgery_advised: 'yes',
+      surgery_advised_detail: 'Fusion at L5-S1',
     });
-    expect(result.secondaryNotes.join(' ')).toMatch(/hip/i);
+    expect(result.secondaryNotes.join(' ')).toMatch(/named the surgery/i);
   });
 
-  it('adds a recent-imaging note', () => {
-    const result = run({
-      ...noRedFlags,
-      chief_complaint: ['low_back_pain'],
-      img_done: ['mri'],
-      img_when: 'lt_3m',
-    });
-    expect(result.secondaryNotes.join(' ')).toMatch(/scan|film|report/i);
+  it('flags stable weakness, which the table does not score', () => {
+    const result = run({ weakness: 'stable' });
+    expect(result.score).toBe(0);
+    expect(result.secondaryNotes.join(' ')).toMatch(/stable arm\/leg weakness/i);
   });
 
-  it('adds a free-text note', () => {
-    const result = run({
-      ...noRedFlags,
-      chief_complaint: ['low_back_pain'],
-      free_text: 'Pain worse after driving.',
-    });
-    expect(result.secondaryNotes.join(' ')).toMatch(/free-text note/i);
+  it('flags an injury without neurological symptoms', () => {
+    const result = run({ main_problem: ['back_pain', 'injury'] });
+    expect(result.category).not.toBe('URGENT');
+    expect(result.secondaryNotes.join(' ')).toMatch(/how recent/i);
+  });
+
+  it('flags a previous patient', () => {
+    const result = run({ previous_patient: 'yes' });
+    expect(result.secondaryNotes.join(' ')).toMatch(/previous patient/i);
   });
 });
 
 describe('red-flag reporting', () => {
-  it('reports a positive red flag with its answer', () => {
-    const flags = redFlagsFromSchema(questionnaireV1, {
+  it('reports the neurological screen with the answer wording', () => {
+    const flags = redFlagsFromSchema(questionnaireV2, {
       ...base,
-      ...noRedFlags,
-      rf_saddle: 'yes',
+      ...clean,
+      weakness: 'progressive',
     });
-    const saddle = flags.find((f) => f.key === 'rf_saddle');
-    expect(saddle?.answer).toBe('Yes');
-    const positives = flags.filter(
-      (f) => f.answer !== 'No' && f.answer !== 'Not answered',
-    );
-    expect(positives.map((f) => f.key)).toEqual(['rf_saddle']);
+    expect(flags.map((f) => [f.key, f.answer])).toEqual([
+      ['weakness', 'Yes – progressively increasing'],
+      ['walking_balance', 'No'],
+    ]);
   });
 
-  it('reports all red flags as No for a clean patient', () => {
-    const flags = redFlagsFromSchema(questionnaireV1, { ...base, ...noRedFlags });
-    expect(flags.length).toBeGreaterThanOrEqual(10);
+  it('reports both as No for a clean patient', () => {
+    const flags = redFlagsFromSchema(questionnaireV2, { ...base, ...clean });
     expect(flags.every((f) => f.answer === 'No')).toBe(true);
   });
 });

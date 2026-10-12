@@ -3,9 +3,9 @@ import { completionScreen, consent, disclaimer, emergencyScreen } from './copy';
 import { questions, sections } from './questions';
 import { rules } from './rules';
 
-export const QUESTIONNAIRE_VERSION = 1;
+export const QUESTIONNAIRE_VERSION = 2;
 
-export const questionnaireV1: QuestionnaireSchema = {
+export const questionnaireV2: QuestionnaireSchema = {
   version: QUESTIONNAIRE_VERSION,
   sections,
   questions,
@@ -15,4 +15,4 @@ export const questionnaireV1: QuestionnaireSchema = {
   disclaimer,
 };
 
-export const rulesV1: TriageRule[] = rules;
+export const rulesV2: TriageRule[] = rules;

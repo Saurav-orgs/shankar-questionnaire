@@ -13,7 +13,7 @@ export function AppHeader({ onLoggedOut }: { onLoggedOut: () => void }) {
   })
 
   return (
-    <header className="flex items-center justify-between border-b border-slate-200 bg-white px-6 py-3">
+    <header className="flex items-center justify-between border-b border-slate-200 bg-white px-3 py-2 md:px-6 md:py-3">
       <button
         type="button"
         onClick={() => navigate('/')}

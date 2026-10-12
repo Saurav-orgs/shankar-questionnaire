@@ -57,6 +57,19 @@ export interface AssessmentState {
   schema?: LocalizedSchema;
 }
 
+/** Answers plus the detail columns, keyed as the schema sees them. */
+export function buildEvaluationContext(assessment: Assessment): EvaluationContext {
+  return {
+    ...assessment.answers,
+    name: assessment.patientName,
+    age: assessment.patientAge,
+    gender: assessment.patientGender,
+    mobile: assessment.patientMobile,
+    city: assessment.patientCity,
+    occupation: assessment.patientOccupation,
+  } as EvaluationContext;
+}
+
 @Injectable()
 export class AssessmentsService {
   constructor(
@@ -108,17 +121,8 @@ export class AssessmentsService {
     return { assessment, version };
   }
 
-  /** Answers plus the detail columns, keyed as the schema sees them. */
   private buildContext(assessment: Assessment): EvaluationContext {
-    return {
-      ...assessment.answers,
-      name: assessment.patientName,
-      age: assessment.patientAge,
-      gender: assessment.patientGender,
-      mobile: assessment.patientMobile,
-      city: assessment.patientCity,
-      occupation: assessment.patientOccupation,
-    } as EvaluationContext;
+    return buildEvaluationContext(assessment);
   }
 
   private toState(

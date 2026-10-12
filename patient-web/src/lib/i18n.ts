@@ -10,6 +10,7 @@ const resources = {
   en: {
     translation: {
       appName: 'Spine Assessment',
+      screeningTitle: 'Spine Surgery Appointment Pre-Screening Form',
       startAssessment: 'Start Assessment',
       continue: 'Continue',
       back: 'Back',
@@ -25,11 +26,8 @@ const resources = {
       questionOf: 'Question {{answered}} of about {{total}}',
       agree: 'I agree',
       mustAgree: 'Please agree to continue.',
-      yourDetails: 'Your details',
-      importantChecks: 'A few important checks',
-      dailyLife: 'Your daily life',
-      reviewTitle: "You're done",
-      reviewBody: 'You have answered every question. Submit when ready.',
+      pageOf: 'Step {{page}} of {{total}}',
+      fixErrors: 'Please answer the highlighted questions.',
       selectAtLeastOne: 'Select at least one option.',
       enterMobile: 'Enter a valid 10-digit mobile number.',
       resumeError: 'We could not find this assessment. Please start again.',
@@ -41,6 +39,7 @@ const resources = {
   hi: {
     translation: {
       appName: 'रीढ़ की जाँच',
+      screeningTitle: 'स्पाइन सर्जरी अपॉइंटमेंट प्री-स्क्रीनिंग फ़ॉर्म',
       startAssessment: 'जाँच शुरू करें',
       continue: 'आगे बढ़ें',
       back: 'पीछे',
@@ -56,11 +55,8 @@ const resources = {
       questionOf: 'प्रश्न {{answered}} / लगभग {{total}}',
       agree: 'मैं सहमत हूँ',
       mustAgree: 'आगे बढ़ने के लिए कृपया सहमति दें।',
-      yourDetails: 'आपकी जानकारी',
-      importantChecks: 'कुछ ज़रूरी सवाल',
-      dailyLife: 'आपकी रोज़मर्रा की ज़िंदगी',
-      reviewTitle: 'आपका फ़ॉर्म तैयार है',
-      reviewBody: 'आपने सभी सवालों के जवाब दे दिए हैं। तैयार होने पर जमा करें।',
+      pageOf: 'चरण {{page}} / {{total}}',
+      fixErrors: 'कृपया चिह्नित सवालों के जवाब दें।',
       selectAtLeastOne: 'कम से कम एक विकल्प चुनें।',
       enterMobile: 'सही 10 अंकों का मोबाइल नंबर डालें।',
       resumeError: 'यह फ़ॉर्म नहीं मिला। कृपया फिर से शुरू करें।',

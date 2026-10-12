@@ -6,8 +6,18 @@ export const api = axios.create({
   withCredentials: true,
 })
 
-export type TriageCategory = 'RED' | 'AMBER' | 'GREY' | 'GREEN'
-export type TriageUrgency = 'emergency' | 'urgent' | 'routine' | 'non_urgent'
+export type TriageCategory =
+  | 'URGENT'
+  | 'SURGICAL'
+  | 'REVIEW'
+  | 'ROUTINE'
+  | 'REPORT_ONLY'
+export type TriageUrgency =
+  | 'emergency'
+  | 'urgent'
+  | 'priority'
+  | 'routine'
+  | 'non_urgent'
 
 export interface DashboardRow {
   id: string
@@ -18,6 +28,7 @@ export interface DashboardRow {
   mainComplaint: string | null
   category: TriageCategory | null
   urgency: TriageUrgency | null
+  score: number | null
   emergencyTriggered: boolean
   redFlagCount: number
   reviewed: boolean
@@ -28,8 +39,11 @@ export interface MatchedRule {
   code: string
   label: string
   explain: string
-  severity: number
-  category: TriageCategory
+  /** Category rules only. */
+  severity?: number
+  category?: TriageCategory
+  /** Scoring rules only. */
+  points?: number
 }
 
 export interface RedFlag {
@@ -56,6 +70,7 @@ export interface AssessmentDetail {
     category: TriageCategory
     urgency: TriageUrgency
     pathway: string
+    score: number | null
     summaryText: string | null
     summarySource: string | null
     matchedRules: MatchedRule[]

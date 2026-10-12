@@ -36,25 +36,23 @@ export const emergencyScreen = {
 };
 
 /**
- * The single screen every patient sees after submitting — including someone
- * who answered a red flag. It is deliberately calm and identical for everyone:
- * it never tells the patient anything is wrong, because that is the doctor's
- * call, not the software's (see plan.md §2). The doctor still receives red-flag
- * cases immediately and at the top of their dashboard; the patient just sees a
- * reassuring "the doctor will connect with you".
+ * The single screen every patient sees after submitting — the same for a RED
+ * patient and a routine one. It says exactly what the team is allowed to say
+ * (SCREENING §7) and nothing more: the form categorises the appointment, and
+ * only the doctor decides about surgery, after examining the patient. It never
+ * names a category, a score, or a likely outcome.
  *
- * The two requests it makes — bring your reports, bring your medicines — exist
- * because they save the doctor time in the room, which is the point of the
- * whole system.
+ * The request to bring reports exists because it saves the doctor time in the
+ * room, which is the point of the whole system.
  */
 export const completionScreen = {
   heading: t(
-    'Thank you — your answers have been sent to the doctor.',
-    'धन्यवाद — आपके उत्तर डॉक्टर को भेज दिए गए हैं।',
+    'Thank you — your form has been sent to the clinic.',
+    'धन्यवाद — आपका फ़ॉर्म क्लिनिक को भेज दिया गया है।',
   ),
   body: t(
-    'The doctor will review your answers and the clinic will connect with you soon. When you visit, please bring any scan reports (X-ray, MRI, CT) and a list of the medicines you take.',
-    'डॉक्टर आपके उत्तरों की समीक्षा करेंगे और क्लिनिक जल्द ही आपसे संपर्क करेगा। आते समय कृपया अपनी जाँच रिपोर्ट (एक्स-रे, एमआरआई, सीटी) और जो दवाइयाँ आप लेते हैं उनकी सूची साथ लाएँ।',
+    'Based on the information provided, your appointment has been categorized for appropriate consultation priority. The need for surgery can only be decided by Dr. Shankar Acharya after examining you and reviewing the relevant investigations. The clinic will contact you on your mobile/WhatsApp number. When you visit, please bring your MRI, CT or X-ray reports and films.',
+    'दी गई जानकारी के आधार पर, आपके अपॉइंटमेंट को उचित परामर्श प्राथमिकता के लिए वर्गीकृत कर दिया गया है। सर्जरी की ज़रूरत है या नहीं, यह केवल डॉ. शंकर आचार्य आपकी जाँच करने और संबंधित रिपोर्ट देखने के बाद ही तय कर सकते हैं। क्लिनिक आपके मोबाइल / व्हाट्सऐप नंबर पर संपर्क करेगा। आते समय कृपया अपनी एमआरआई, सीटी या एक्स-रे की रिपोर्ट और फ़िल्में साथ लाएँ।',
   ),
 };
 

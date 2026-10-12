@@ -1,7 +1,14 @@
+import { useState } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
 import { useQuery } from '@tanstack/react-query'
 import { fetchDetail } from '../lib/api'
-import { CATEGORY_STYLE, formatWhen, URGENCY_LABEL } from '../lib/triage'
+import {
+  CATEGORY_STYLE,
+  formatPoints,
+  formatWhen,
+  PATIENT_FACING_WORDING,
+  URGENCY_LABEL,
+} from '../lib/triage'
 import { AppHeader } from '../components/AppHeader'
 import { ReviewForm } from './ReviewForm'
 
@@ -89,42 +96,83 @@ export function PatientDetail({ onLoggedOut }: { onLoggedOut: () => void }) {
                 )}
             </section>
 
-            {/* AI / template summary */}
+            {/* Team summary, in the WhatsApp format from the SOP */}
             {detail.triage?.summaryText && (
               <section className="rounded-xl border border-slate-200 bg-white p-5">
-                <h2 className="mb-2 text-sm font-semibold uppercase tracking-wide text-slate-500">
-                  Summary
-                </h2>
-                <div className="space-y-1.5 text-sm leading-relaxed text-slate-700">
-                  {detail.triage.summaryText.split('\n').map((line, i) => (
-                    <p key={i}>{line}</p>
-                  ))}
+                <div className="mb-2 flex items-center justify-between">
+                  <h2 className="text-sm font-semibold uppercase tracking-wide text-slate-500">
+                    Summary for the team
+                  </h2>
+                  <CopyButton text={detail.triage.summaryText} />
                 </div>
+                <pre className="whitespace-pre-wrap font-sans text-sm leading-relaxed text-slate-700">
+                  {detail.triage.summaryText}
+                </pre>
               </section>
             )}
 
-            {/* Why this verdict */}
+            {/* Why this category */}
             {detail.triage && detail.triage.matchedRules.length > 0 && (
               <section className="rounded-xl border border-slate-200 bg-white p-5">
                 <h2 className="mb-3 text-sm font-semibold uppercase tracking-wide text-slate-500">
-                  Why this verdict
+                  Why this category
                 </h2>
                 <ul className="space-y-2.5">
-                  {detail.triage.matchedRules.map((rule) => (
-                    <li key={rule.code} className="flex gap-2.5 text-sm">
-                      <span
-                        className={
-                          'mt-1.5 h-2 w-2 shrink-0 rounded-full ' +
-                          CATEGORY_STYLE[rule.category].dot
-                        }
-                      />
-                      <div>
-                        <p className="font-medium text-slate-800">{rule.label}</p>
-                        <p className="text-slate-500">{rule.explain}</p>
-                      </div>
-                    </li>
-                  ))}
+                  {detail.triage.matchedRules
+                    .filter((rule) => rule.category)
+                    .map((rule) => (
+                      <li key={rule.code} className="flex gap-2.5 text-sm">
+                        <span
+                          className={
+                            'mt-1.5 h-2 w-2 shrink-0 rounded-full ' +
+                            (rule.category
+                              ? (CATEGORY_STYLE[rule.category]?.dot ?? 'bg-slate-300')
+                              : 'bg-slate-300')
+                          }
+                        />
+                        <div>
+                          <p className="font-medium text-slate-800">{rule.label}</p>
+                          <p className="text-slate-500">{rule.explain}</p>
+                        </div>
+                      </li>
+                    ))}
                 </ul>
+
+                {detail.triage.matchedRules.some((rule) => rule.points !== undefined) && (
+                  <div className="mt-4 border-t border-slate-100 pt-3">
+                    <div className="mb-2 flex items-center justify-between">
+                      <h3 className="text-xs font-semibold uppercase tracking-wide text-slate-400">
+                        Score breakdown
+                      </h3>
+                      <span className="text-sm font-semibold tabular-nums text-slate-700">
+                        {detail.triage.score ?? '—'}
+                      </span>
+                    </div>
+                    <ul className="space-y-1.5">
+                      {detail.triage.matchedRules
+                        .filter((rule) => rule.points !== undefined)
+                        .map((rule) => (
+                          <li
+                            key={rule.code}
+                            className="flex items-baseline justify-between gap-4 text-sm"
+                          >
+                            <span className="text-slate-700" title={rule.explain}>
+                              {rule.label}
+                            </span>
+                            <span
+                              className={
+                                'shrink-0 tabular-nums font-semibold ' +
+                                ((rule.points ?? 0) < 0 ? 'text-slate-400' : 'text-slate-700')
+                              }
+                            >
+                              {formatPoints(rule.points ?? 0)}
+                            </span>
+                          </li>
+                        ))}
+                    </ul>
+                  </div>
+                )}
+
                 {detail.triage.secondaryNotes.length > 0 && (
                   <div className="mt-4 border-t border-slate-100 pt-3">
                     {detail.triage.secondaryNotes.map((note, i) => (
@@ -148,6 +196,24 @@ export function PatientDetail({ onLoggedOut }: { onLoggedOut: () => void }) {
                 )}
               </section>
             )}
+
+            {/* What the team may tell the patient (SOP §7) */}
+            <section className="rounded-xl border border-blue-100 bg-blue-50/60 p-5">
+              <div className="mb-1.5 flex items-center justify-between">
+                <h2 className="text-sm font-semibold uppercase tracking-wide text-blue-700">
+                  What to tell the patient
+                </h2>
+                <CopyButton text={PATIENT_FACING_WORDING} />
+              </div>
+              <p className="text-sm leading-relaxed text-slate-700">
+                “{PATIENT_FACING_WORDING}”
+              </p>
+              <p className="mt-2 text-xs text-slate-500">
+                Never tell a patient they are, or are not, a surgical patient.
+                The screening is administrative; the surgical decision is Dr.
+                Acharya's, after examination.
+              </p>
+            </section>
 
             {/* Red flags */}
             {detail.triage && (
@@ -187,8 +253,8 @@ export function PatientDetail({ onLoggedOut }: { onLoggedOut: () => void }) {
             </section>
 
             <p className="pb-8 text-xs text-slate-400">
-              Draft triage logic — pending clinical review. This is a
-              pre-consultation aid, not a diagnosis.
+              Administrative triage for appointment allocation — not a medical
+              score, not a diagnosis. Draft logic pending Dr. Acharya's review.
             </p>
           </div>
         )}
@@ -206,14 +272,47 @@ function VerdictBanner({
   return (
     <section className={'rounded-xl border p-5 ' + style.chip}>
       <div className="flex items-center gap-2">
-        <span className={'h-3 w-3 rounded-full ' + style.dot} />
+        <span className="text-lg leading-none">{style.emoji}</span>
         <p className="text-lg font-bold">{style.label}</p>
-        <span className="ml-auto rounded-full bg-white/60 px-2.5 py-0.5 text-xs font-semibold">
-          {URGENCY_LABEL[triage.urgency]}
+        <span className="ml-auto flex items-center gap-2">
+          {triage.score !== null && (
+            <span
+              className="rounded-full bg-white/60 px-2.5 py-0.5 text-xs font-semibold tabular-nums"
+              title="Internal screening score — never shown to the patient"
+            >
+              Score {triage.score}
+            </span>
+          )}
+          <span className="rounded-full bg-white/60 px-2.5 py-0.5 text-xs font-semibold">
+            {URGENCY_LABEL[triage.urgency]}
+          </span>
         </span>
       </div>
       <p className="mt-1.5 text-sm font-medium">{triage.pathway}</p>
     </section>
+  )
+}
+
+function CopyButton({ text }: { text: string }) {
+  const [copied, setCopied] = useState(false)
+  const copy = async () => {
+    try {
+      await navigator.clipboard.writeText(text)
+      setCopied(true)
+      setTimeout(() => setCopied(false), 1500)
+    } catch {
+      // Clipboard can be unavailable (http, old WebView) — the text is on
+      // screen to select by hand, so there is nothing else to do.
+    }
+  }
+  return (
+    <button
+      type="button"
+      onClick={copy}
+      className="rounded-md border border-slate-300 bg-white px-2 py-1 text-xs font-medium text-slate-600 hover:bg-slate-50"
+    >
+      {copied ? 'Copied' : 'Copy'}
+    </button>
   )
 }
 

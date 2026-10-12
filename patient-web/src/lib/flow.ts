@@ -7,11 +7,20 @@ import type {
 import type { LocalizedQuestion, LocalizedSchema } from './api'
 
 /**
- * Sections rendered as one grouped screen instead of one screen per question.
- * A full patient answers ~45-47 questions (measured in Phase 2) — one screen
- * each would blow the 5-7 minute budget. See plan.md §6.
+ * Three steps: Section A (patient details), Section B (Q1–4), then Sections
+ * C–E (Q5–10). A page is a list of schema sections; the sections themselves
+ * stay separate because the doctor panel groups answers by them.
  */
-export const GROUPED_SECTIONS = new Set(['details', 'red_flags', 'function'])
+export const PAGES: readonly (readonly string[])[] = [
+  ['details'],
+  ['problem'],
+  ['treatment', 'imaging', 'reason'],
+]
+
+/** Index of the page a section is on, or -1 if it is shown one question at a time. */
+export function pageOf(section: string): number {
+  return PAGES.findIndex((sections) => sections.includes(section))
+}
 
 /**
  * The evaluator (evaluateCondition, visibleQuestions, ...) only reads
@@ -30,9 +39,10 @@ export function sectionOf(schema: LocalizedSchema, key: string): string | null {
   return schema.questions.find((q) => q.key === key)?.section ?? null
 }
 
-export function questionsInSection(
+/** Visible questions on a page, in schema order, for the given answers. */
+export function questionsOnPage(
   schema: LocalizedSchema,
-  section: string,
+  page: number,
   context: EvaluationContext,
 ): LocalizedQuestion[] {
   const evalSchema = asEvaluatorSchema(schema)
@@ -40,7 +50,7 @@ export function questionsInSection(
     visibleQuestions(evalSchema, context).map((q) => q.key),
   )
   return schema.questions.filter(
-    (q) => q.section === section && visibleKeys.has(q.key),
+    (q) => pageOf(q.section) === page && visibleKeys.has(q.key),
   )
 }
 
@@ -59,11 +69,11 @@ function isBlank(value: AnswerValue | undefined): boolean {
  * optional answer is indistinguishable from an unreached one and would be
  * re-offered forever:
  *
- *  1. Grouped sections (details/red_flags/function) submit every visible field
- *     at once. Once every REQUIRED field in the section is answered, the whole
- *     section counts as done even if an optional field (e.g. city) stayed blank.
+ *  1. A page submits every visible field at once. Once every REQUIRED field
+ *     on the page is answered, the whole page counts as done even if an
+ *     optional field (e.g. surgery_advised_detail) stayed blank.
  *
- *  2. Ungrouped optional questions (free_text, tx_prior_surgery_detail) are
+ *  2. Ungrouped optional questions (none in v2, kept for schema changes) are
  *     shown once; when the patient skips one it is added to `skipped` by the
  *     caller, and from then on a blank-but-skipped optional question no longer
  *     blocks progression to the submit screen.
@@ -79,14 +89,15 @@ export function nextVisibleQuestion(
   const visible = visibleQuestions(evalSchema, context)
 
   for (const q of visible) {
-    if (GROUPED_SECTIONS.has(q.section) && !q.required) {
-      const sectionRequired = visible.filter(
-        (v) => v.section === q.section && v.required,
+    const page = pageOf(q.section)
+    if (page >= 0 && !q.required) {
+      const pageRequired = visible.filter(
+        (v) => pageOf(v.section) === page && v.required,
       )
-      const sectionRequiredDone = sectionRequired.every(
+      const pageRequiredDone = pageRequired.every(
         (v) => !isBlank(context[v.key] as AnswerValue | undefined),
       )
-      if (sectionRequiredDone) continue
+      if (pageRequiredDone) continue
     }
     // An optional question the patient already skipped no longer blocks.
     if (!q.required && skipped.has(q.key)) continue

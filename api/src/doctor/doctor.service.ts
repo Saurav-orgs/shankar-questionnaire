@@ -11,11 +11,21 @@ import type { ReviewDecision } from '../models/doctor-review.model';
 import { buildLabelLookup } from '../questionnaire/localize';
 import type { AnswerValue } from '../questionnaire/types';
 
+// SOP §5: A first, then B, then C; D is not prioritised for surgical OPD.
+const CATEGORY_RANK: Record<string, number> = {
+  URGENT: 0,
+  SURGICAL: 1,
+  REVIEW: 2,
+  ROUTINE: 3,
+  REPORT_ONLY: 4,
+};
+
 const URGENCY_RANK: Record<string, number> = {
   emergency: 0,
   urgent: 1,
-  routine: 2,
-  non_urgent: 3,
+  priority: 2,
+  routine: 3,
+  non_urgent: 4,
 };
 
 export interface DashboardRow {
@@ -27,6 +37,7 @@ export interface DashboardRow {
   mainComplaint: string | null;
   category: string | null;
   urgency: string | null;
+  score: number | null;
   emergencyTriggered: boolean;
   redFlagCount: number;
   reviewed: boolean;
@@ -87,6 +98,7 @@ export class DoctorService {
           mainComplaint: this.mainComplaintCode(a),
           category: a.triageResult?.category ?? null,
           urgency: a.triageResult?.urgency ?? null,
+          score: a.triageResult?.score ?? null,
           emergencyTriggered: a.emergencyTriggered,
           redFlagCount:
             a.triageResult?.redFlags?.filter(
@@ -97,8 +109,16 @@ export class DoctorService {
         };
       });
 
-    // Sort by urgency, then most recent. Emergencies always float to the top.
+    // Sort by category, then score, then urgency, then most recent. RED
+    // always floats to the top; unevaluated (in-progress) rows sink to the
+    // bottom.
     return mapped.sort((a, b) => {
+      const ca = CATEGORY_RANK[a.category ?? ''] ?? 9;
+      const cb = CATEGORY_RANK[b.category ?? ''] ?? 9;
+      if (ca !== cb) return ca - cb;
+      const sa = a.score ?? Number.NEGATIVE_INFINITY;
+      const sb = b.score ?? Number.NEGATIVE_INFINITY;
+      if (sa !== sb) return sb - sa;
       const ua = URGENCY_RANK[a.urgency ?? 'non_urgent'] ?? 9;
       const ub = URGENCY_RANK[b.urgency ?? 'non_urgent'] ?? 9;
       if (ua !== ub) return ua - ub;
@@ -109,10 +129,8 @@ export class DoctorService {
   }
 
   private mainComplaintCode(a: Assessment): string | null {
-    const primary = a.answers?.primary_complaint;
-    if (typeof primary === 'string') return primary;
-    const cc = a.answers?.chief_complaint;
-    if (Array.isArray(cc) && cc.length) return String(cc[0]);
+    const problems = a.answers?.main_problem;
+    if (Array.isArray(problems) && problems.length) return String(problems[0]);
     return null;
   }
 
@@ -173,6 +191,7 @@ export class DoctorService {
             category: assessment.triageResult.category,
             urgency: assessment.triageResult.urgency,
             pathway: assessment.triageResult.pathway,
+            score: assessment.triageResult.score,
             summaryText: assessment.triageResult.summaryText,
             summarySource: assessment.triageResult.summarySource,
             matchedRules: assessment.triageResult.matchedRules,

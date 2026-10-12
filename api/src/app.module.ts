@@ -4,6 +4,7 @@ import { SequelizeModule } from '@nestjs/sequelize';
 import { ThrottlerGuard, ThrottlerModule } from '@nestjs/throttler';
 import { APP_GUARD } from '@nestjs/core';
 import { buildDatabaseOptions } from './config/database.config';
+import { DatabaseModule } from './database/database.module';
 import { DoctorModule } from './doctor/doctor.module';
 import { HealthModule } from './health/health.module';
 import { PatientModule } from './patient.module';
@@ -18,6 +19,8 @@ import { PatientModule } from './patient.module';
     // A patient answering ~50 questions autosaves after each one, and a whole
     // clinic waiting room shares a single IP. 120/min throttled real usage.
     ThrottlerModule.forRoot([{ name: 'default', ttl: 60_000, limit: 300 }]),
+    // Migrates + seeds on start so a new database needs no manual setup.
+    DatabaseModule,
     HealthModule,
     PatientModule,
     DoctorModule,

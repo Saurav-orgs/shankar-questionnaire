@@ -10,7 +10,7 @@ import {
   submitAssessment,
   type LocalizedQuestion,
 } from '../lib/api'
-import { GROUPED_SECTIONS, nextVisibleQuestion, questionsInSection } from '../lib/flow'
+import { PAGES, nextVisibleQuestion, pageOf } from '../lib/flow'
 import type { AnswerValue } from '../questionnaire/types'
 import { Disclaimer } from '../components/Disclaimer'
 import { LanguageToggle } from '../components/LanguageToggle'
@@ -18,12 +18,12 @@ import { PageShell } from '../components/PageShell'
 import { ProgressBar } from '../components/ProgressBar'
 import { AssessmentFlowSkeleton, ResumeError } from './FlowStates'
 import { Done } from './Done'
-import { GroupScreen } from './GroupScreen'
+import { PageScreen } from './PageScreen'
 import { SingleQuestionScreen } from './SingleQuestionScreen'
-import { SubmitScreen } from './SubmitScreen'
 
 function screenId(section: string | null, key: string): string {
-  if (section && GROUPED_SECTIONS.has(section)) return `group:${section}`
+  const page = section ? pageOf(section) : -1
+  if (page >= 0) return `page:${page}`
   return `q:${key}`
 }
 
@@ -115,9 +115,15 @@ export function AssessmentFlow() {
   // doc comment for why: the server's version can't tell "optional field left
   // blank inside an already-submitted group" from "never reached", which stalls
   // the flow on a field like `city` forever. This computation can.
+  //
+  // When nothing is left to answer (e.g. a resumed, fully-filled form) the
+  // last page is shown again with its Submit button rather than a separate
+  // review screen.
+  const lastPageId = `page:${PAGES.length - 1}`
   const upcoming = nextVisibleQuestion(schema, state.answers, skippedRef.current)
-  const currentId = backOverride ?? screenId(upcoming?.section ?? null, upcoming?.key ?? 'submit')
-  const effectiveId = upcoming === null && !backOverride ? 'submit' : currentId
+  const effectiveId =
+    backOverride ??
+    (upcoming === null ? lastPageId : screenId(upcoming.section, upcoming.key))
 
   if (!backOverride) {
     const last = historyRef.current[historyRef.current.length - 1]
@@ -134,10 +140,17 @@ export function AssessmentFlow() {
 
   const advanceFromOverride = () => setBackOverride(null)
 
-  const handleGroupContinue = (values: Record<string, AnswerValue>) => {
+  const handleGroupContinue = (page: number) => (values: Record<string, AnswerValue>) => {
     patch.mutate(
       { answers: values },
-      { onSuccess: () => advanceFromOverride() },
+      {
+        onSuccess: (result) => {
+          advanceFromOverride()
+          // Last page: save, then submit — unless a red flag on this page
+          // already submitted the assessment server-side.
+          if (page === PAGES.length - 1 && !result.emergency) submit.mutate()
+        },
+      },
     )
   }
 
@@ -159,34 +172,21 @@ export function AssessmentFlow() {
   }
 
   const renderById = (id: string) => {
-    if (id === 'submit') {
+    if (id.startsWith('page:')) {
+      const page = Number(id.slice('page:'.length))
       return (
-        <SubmitScreen
-          onSubmit={() => submit.mutate()}
-          onBack={handleBack}
-          canGoBack={canGoBack}
-          pending={submit.isPending}
-          serverError={serverError}
-        />
-      )
-    }
-
-    if (id.startsWith('group:')) {
-      const section = id.slice('group:'.length)
-      const questions = questionsInSection(schema, section, state.answers)
-      return (
-        // key forces a remount when the section changes, so GroupScreen's
-        // internal useState re-initialises from this section's answers instead
+        // key forces a remount when the page changes, so PageScreen's
+        // internal useState re-initialises from this page's answers instead
         // of carrying the previous screen's selections forward.
-        <GroupScreen
+        <PageScreen
           key={id}
-          section={section}
-          questions={questions}
+          page={page}
+          schema={schema}
           answers={state.answers}
-          onContinue={handleGroupContinue}
+          onContinue={handleGroupContinue(page)}
           onBack={handleBack}
           canGoBack={canGoBack}
-          pending={patch.isPending}
+          pending={patch.isPending || submit.isPending}
           serverError={serverError}
         />
       )

@@ -7,7 +7,7 @@ import {
 } from './evaluator';
 import { conditionCases } from './evaluator.fixtures';
 import type { EvaluationContext } from './types';
-import { questionnaireV1, rulesV1 } from './v1';
+import { questionnaireV2, rulesV2 } from './v2';
 import { validateQuestionnaire } from './validate';
 
 describe('evaluateCondition', () => {
@@ -16,69 +16,89 @@ describe('evaluateCondition', () => {
   });
 });
 
-describe('questionnaire v1 integrity', () => {
+describe('questionnaire v2 integrity', () => {
   it('passes structural validation', () => {
-    expect(validateQuestionnaire(questionnaireV1, rulesV1)).toEqual([]);
+    expect(validateQuestionnaire(questionnaireV2, rulesV2)).toEqual([]);
   });
 
-  it('asks the red flags before any regional branch', () => {
-    const keys = questionnaireV1.questions.map((q) => q.key);
-    const lastRedFlag = Math.max(
-      ...questionnaireV1.questions
-        .filter((q) => q.isRedFlag)
-        .map((q) => keys.indexOf(q.key)),
-    );
-    const firstBranch = Math.min(
-      keys.indexOf('lbp_duration'),
-      keys.indexOf('neck_duration'),
-    );
-    expect(lastRedFlag).toBeLessThan(firstBranch);
+  it("asks the doctor's ten questions in his order", () => {
+    const keys = questionnaireV2.questions.map((q) => q.key);
+    const doctorOrder = [
+      'main_problem', // 1
+      'weakness', // 2
+      'walking_balance', // 3
+      'duration', // 4
+      'treatment', // 5
+      'treatment_response', // 6
+      'has_imaging', // 7
+      'diagnosis', // 8
+      'surgery_advised', // 9
+      'consult_reason', // 10
+    ];
+    const positions = doctorOrder.map((k) => keys.indexOf(k));
+    expect(positions.every((p) => p >= 0)).toBe(true);
+    expect([...positions].sort((a, b) => a - b)).toEqual(positions);
+  });
+
+  it('asks nothing the doctor did not ask', () => {
+    // Section A (plus gender, which the WhatsApp summary's Mr./Mrs. needs),
+    // his ten questions, and the "if yes / other" follow-ups.
+    expect(questionnaireV2.questions.map((q) => q.key)).toEqual([
+      'name',
+      'age',
+      'gender',
+      'mobile',
+      'city',
+      'previous_patient',
+      'main_problem',
+      'main_problem_other',
+      'weakness',
+      'walking_balance',
+      'duration',
+      'treatment',
+      'treatment_response',
+      'has_imaging',
+      'diagnosis',
+      'diagnosis_other',
+      'surgery_advised',
+      'surgery_advised_detail',
+      'consult_reason',
+    ]);
+  });
+
+  it('groups the questions into the form\'s sections A–E', () => {
+    expect(questionnaireV2.sections.map((s) => s.key)).toEqual([
+      'details',
+      'problem',
+      'treatment',
+      'imaging',
+      'reason',
+    ]);
   });
 
   it('has every question reachable by some answer set', () => {
-    // A question no context can ever reveal is dead content. Several contexts
-    // are needed because some questions are mutually exclusive by design —
-    // symptom_area only appears when no region was named, and is_pregnant only
-    // for a woman of childbearing age.
+    // Two contexts because the follow-ups need their trigger answered.
     const contexts: EvaluationContext[] = [
       {
-        age: 60,
-        gender: 'male',
-        chief_complaint: [
-          'neck_pain',
-          'low_back_pain',
-          'leg_pain',
-          'arm_pain',
-          'walking_difficulty',
-        ],
-        lbp_radiate: 'below_knee',
-        lbp_walk_distance: 'lt_100m',
-        neck_radiate: 'below_elbow',
-        neck_numbness_hand: 'yes',
-        neck_grip: 'yes',
-        myelo_buttons: 'yes',
-        myelo_gait: 'yes',
-        hip_groin: 'yes',
-        tx_tried: ['physio', 'surgery'],
-        img_done: ['mri'],
+        main_problem: ['back_pain', 'other'],
+        treatment: ['physio'],
+        diagnosis: ['other'],
+        surgery_advised: 'yes',
       },
-      // Symptom named without a region.
-      { age: 40, gender: 'male', chief_complaint: ['numbness'] },
-      // Woman of childbearing age.
-      { age: 30, gender: 'female', chief_complaint: ['low_back_pain'] },
+      {
+        main_problem: ['neck_pain'],
+        treatment: ['none'],
+        diagnosis: ['dont_know'],
+        surgery_advised: 'no',
+      },
     ];
-
     const reachable = new Set<string>();
-    for (const context of contexts) {
-      for (const question of visibleQuestions(questionnaireV1, context)) {
-        reachable.add(question.key);
-      }
+    for (const ctx of contexts) {
+      for (const q of visibleQuestions(questionnaireV2, ctx)) reachable.add(q.key);
     }
-
-    const unreachable = questionnaireV1.questions
+    const unreachable = questionnaireV2.questions
       .map((q) => q.key)
-      .filter((key) => !reachable.has(key));
-
+      .filter((k) => !reachable.has(k));
     expect(unreachable).toEqual([]);
   });
 });
@@ -89,105 +109,55 @@ describe('branching', () => {
     age: 43,
     gender: 'male',
     mobile: '9999999999',
-    occupation: 'driver',
   };
 
-  it('opens only the lumbar branch for a low back complaint', () => {
-    const context: EvaluationContext = {
-      ...base,
-      chief_complaint: ['low_back_pain'],
-      primary_complaint: 'low_back_pain',
-    };
-    const keys = visibleQuestions(questionnaireV1, context).map((q) => q.key);
+  const keysFor = (ctx: EvaluationContext) =>
+    visibleQuestions(questionnaireV2, ctx).map((q) => q.key);
 
-    expect(keys).toContain('lbp_duration');
-    expect(keys).not.toContain('neck_duration');
-    expect(keys).not.toContain('myelo_buttons');
+  it('asks for a description only when "other" is a main problem', () => {
+    expect(keysFor({ ...base, main_problem: ['back_pain'] })).not.toContain(
+      'main_problem_other',
+    );
+    expect(keysFor({ ...base, main_problem: ['back_pain', 'other'] })).toContain(
+      'main_problem_other',
+    );
   });
 
-  it('opens only the cervical branch for a neck complaint', () => {
-    const context: EvaluationContext = {
-      ...base,
-      chief_complaint: ['neck_pain'],
-      primary_complaint: 'neck_pain',
-    };
-    const keys = visibleQuestions(questionnaireV1, context).map((q) => q.key);
-
-    expect(keys).toContain('neck_duration');
-    expect(keys).toContain('myelo_buttons');
-    expect(keys).not.toContain('lbp_duration');
+  it('asks what the doctor said only when the diagnosis is "other"', () => {
+    expect(keysFor({ ...base, diagnosis: ['disc_prolapse'] })).not.toContain(
+      'diagnosis_other',
+    );
+    expect(keysFor({ ...base, diagnosis: ['other'] })).toContain('diagnosis_other');
   });
 
-  it('asks where the problem is when only numbness is selected', () => {
-    const context: EvaluationContext = {
-      ...base,
-      chief_complaint: ['numbness'],
-      primary_complaint: 'numbness',
-    };
-    const keys = visibleQuestions(questionnaireV1, context).map((q) => q.key);
-
-    // Without symptom_area this patient would answer almost nothing.
-    expect(keys).toContain('symptom_area');
-    expect(keys).not.toContain('lbp_duration');
-
-    const routed = { ...context, symptom_area: 'back_leg' };
-    expect(
-      visibleQuestions(questionnaireV1, routed).map((q) => q.key),
-    ).toContain('lbp_duration');
+  it('skips "did treatment help" when no treatment was tried', () => {
+    expect(keysFor({ ...base, treatment: ['none'] })).not.toContain(
+      'treatment_response',
+    );
+    expect(keysFor({ ...base, treatment: ['medicines'] })).toContain(
+      'treatment_response',
+    );
+    // Unanswered is not "no treatment" — the follow-up stays hidden until
+    // the patient has answered Q6 at all.
+    expect(keysFor(base)).not.toContain('treatment_response');
   });
 
-  it('skips the whole clinical body when the patient picks none of these', () => {
-    const context: EvaluationContext = {
-      ...base,
-      chief_complaint: ['none_of_these'],
-    };
-    const keys = visibleQuestions(questionnaireV1, context).map((q) => q.key);
-
-    expect(keys).not.toContain('primary_complaint');
-    expect(keys).not.toContain('func_work');
-    expect(keys).not.toContain('tx_tried');
-    // ...but red flags and the free-text escape hatch are still asked.
-    expect(keys).toContain('rf_bladder');
-    expect(keys).toContain('free_text');
-  });
-
-  it('asks about pregnancy only for women of childbearing age', () => {
-    const male = { ...base, gender: 'male' };
-    const youngWoman = { ...base, gender: 'female', age: 30 };
-    const olderWoman = { ...base, gender: 'female', age: 68 };
-
-    const keysFor = (ctx: EvaluationContext) =>
-      visibleQuestions(questionnaireV1, ctx).map((q) => q.key);
-
-    expect(keysFor(male)).not.toContain('is_pregnant');
-    expect(keysFor(youngWoman)).toContain('is_pregnant');
-    expect(keysFor(olderWoman)).not.toContain('is_pregnant');
-  });
-
-  it('hides follow-ups until their trigger is answered', () => {
-    const context: EvaluationContext = {
-      ...base,
-      chief_complaint: ['low_back_pain'],
-      primary_complaint: 'low_back_pain',
-      tx_tried: ['rest'],
-    };
-    expect(
-      visibleQuestions(questionnaireV1, context).map((q) => q.key),
-    ).not.toContain('tx_physio_duration');
-
-    const withPhysio = { ...context, tx_tried: ['physio'] };
-    expect(
-      visibleQuestions(questionnaireV1, withPhysio).map((q) => q.key),
-    ).toContain('tx_physio_duration');
+  it('asks which surgery was advised only on yes', () => {
+    expect(keysFor({ ...base, surgery_advised: 'no' })).not.toContain(
+      'surgery_advised_detail',
+    );
+    expect(keysFor({ ...base, surgery_advised: 'yes' })).toContain(
+      'surgery_advised_detail',
+    );
   });
 });
 
 describe('flow helpers', () => {
   it('nextQuestion walks the first unanswered visible question', () => {
-    expect(nextQuestion(questionnaireV1, {})?.key).toBe('name');
+    expect(nextQuestion(questionnaireV2, {})?.key).toBe('name');
 
     const partial: EvaluationContext = { name: 'Test' };
-    expect(nextQuestion(questionnaireV1, partial)?.key).toBe('age');
+    expect(nextQuestion(questionnaireV2, partial)?.key).toBe('age');
   });
 
   it('missingRequired ignores optional questions', () => {
@@ -196,42 +166,35 @@ describe('flow helpers', () => {
       age: 40,
       gender: 'male',
       mobile: '9999999999',
-      occupation: 'driver',
-      chief_complaint: ['none_of_these'],
-      rf_bladder: 'no',
-      rf_bowel: 'no',
-      rf_saddle: 'no',
-      rf_progressive_weakness: 'no',
-      rf_trauma: 'no',
-      rf_fever: 'no',
-      rf_cancer: 'no',
-      rf_weight_loss: 'no',
-      rf_night_pain: 'no',
-      rf_immuno: 'no',
-      comorbidities: ['none'],
+      city: 'Delhi',
+      previous_patient: 'no',
+      main_problem: ['back_pain'],
+      weakness: 'no',
+      walking_balance: 'no',
+      duration: 'lt_6w',
+      treatment: ['none'],
+      has_imaging: 'no',
+      diagnosis: ['other'],
+      surgery_advised: 'yes',
+      consult_reason: 'routine_advice',
     };
-    // `city` and `free_text` are optional, so nothing should be outstanding.
-    expect(missingRequired(questionnaireV1, context).map((q) => q.key)).toEqual(
+    // `diagnosis_other` and `surgery_advised_detail` are optional, so nothing
+    // should be outstanding.
+    expect(missingRequired(questionnaireV2, context).map((q) => q.key)).toEqual(
       [],
     );
   });
 
-  it('detects an emergency trigger, treating unsure as yes', () => {
-    expect(
-      hasEmergencyTrigger(questionnaireV1, { rf_saddle: 'unsure' }).map(
-        (q) => q.key,
-      ),
-    ).toEqual(['rf_saddle']);
-
-    expect(hasEmergencyTrigger(questionnaireV1, { rf_saddle: 'no' })).toEqual(
-      [],
+  it('has no emergency trigger — the form never interrupts', () => {
+    // None of the doctor's ten questions is a cauda-equina screen, so
+    // nothing can halt the questionnaire early. Every patient reaches submit.
+    expect(questionnaireV2.questions.some((q) => q.isEmergencyTrigger)).toBe(
+      false,
     );
-
-    // Progressive weakness triggers on yes only — "not sure" is too common
-    // an answer there to justify an emergency screen.
     expect(
-      hasEmergencyTrigger(questionnaireV1, {
-        rf_progressive_weakness: 'unsure',
+      hasEmergencyTrigger(questionnaireV2, {
+        weakness: 'progressive',
+        walking_balance: 'progressive',
       }),
     ).toEqual([]);
   });

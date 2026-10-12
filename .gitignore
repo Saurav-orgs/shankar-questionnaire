@@ -13,8 +13,3 @@ npm-debug.log*
 .DS_Store
 .vscode/
 .idea/
-
-.venv/
-training-data/bakeoff/renderings/
-training-data/mlx/
-training-data/preds/

@@ -23,13 +23,9 @@
     "migrate:pending": "ts-node -T src/database/migrator.ts pending",
     "migrate:status": "ts-node -T src/database/migrator.ts executed",
     "seed": "ts-node -T src/database/seed.ts",
-    "generate:dataset": "ts-node -T src/training/generate-dataset.ts",
-    "merge:dataset": "ts-node -T src/training/merge-authored.ts",
-    "digest": "ts-node -T src/training/digest.ts",
-    "split:dataset": "ts-node -T src/training/split-dataset.ts",
-    "evaluate": "ts-node -T src/training/evaluate.ts",
-    "score:bakeoff": "ts-node -T src/training/score-bakeoff.ts",
-    "export:mlx": "ts-node -T src/training/export-mlx.ts"
+    "db:setup": "ts-node -T src/database/setup.ts",
+    "retriage": "ts-node -T src/database/retriage.ts",
+    "seed:demo": "python3 scripts/seed-demo-patients.py"
   },
   "dependencies": {
     "@nestjs/common": "^10.0.0",
