@@ -53,7 +53,11 @@ export const conditionCases: ConditionCase[] = [
   /* ---- in / not_in ---- */
   {
     name: 'in matches one of several',
-    condition: { q: 'lbp_duration', op: 'in', value: ['6w_3m', '3_12m', 'gt_1y'] },
+    condition: {
+      q: 'lbp_duration',
+      op: 'in',
+      value: ['6w_3m', '3_12m', 'gt_1y'],
+    },
     context: { lbp_duration: '3_12m' },
     expected: true,
   },

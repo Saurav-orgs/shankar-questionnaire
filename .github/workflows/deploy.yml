@@ -1,0 +1,555 @@
+name: Deploy to Production
+
+on:
+  push:
+    branches: [main]
+  # Deploys are also startable by hand, which is how you ship a rebuild after
+  # changing API_BASE_URL (a repository variable, not code — so no commit would
+  # otherwise trigger one).
+  workflow_dispatch:
+
+concurrency:
+  group: deploy-filter-patient
+  cancel-in-progress: false
+
+env:
+  ROOT: /var/www/filter-patient
+  # These must match the folders that already exist on the server and that pm2
+  # was started from. Renaming one here serves a 404 (frontends) or starts a
+  # second process (API) rather than failing loudly.
+  # Note this is NOT "api": the folder on the server is filter-patient-api,
+  # which is also the pm2 process name below. The release zip is still called
+  # api-dist.zip — that is a build artifact name and independent of this.
+  API_DIR: filter-patient-api
+  DOCTOR_DIR: doctor-web
+  PATIENT_DIR: patient-web
+  # Must match the pm2 process already running. A mismatch does not fail
+  # loudly: pm2 starts a SECOND process, it dies on EADDRINUSE, and the health
+  # check is answered by the old one still holding the port — so the deploy
+  # reports success having changed nothing. Guarded explicitly below.
+  PM2_API: filter-patient-api
+  # digital-opd already uses 3305 and 8000 on this class of box. 4000 is this
+  # API's own default (api/src/main.ts) and must not collide with anything else
+  # on the server.
+  API_PORT: 4000
+  # Returns 200 with {"status":"ok"} when the database is reachable and 200
+  # with {"status":"degraded"} when it is not — so the body, not the status
+  # code, is what decides health here. See wait_healthy below.
+  HEALTH_PATH: /api/health
+  # The API ships as compiled dist and its runtime dependencies are all pure
+  # JS (sequelize, pg, pg-hstore, cookie-parser) — no native builds to get
+  # wrong. This floor is therefore lower than .nvmrc's 22: that pin exists for
+  # the BUILD, where Vite 8 requires ^20.19.0 || >=22.12.0.
+  NODE_MIN_MAJOR: 20
+  NODE_MIN_MINOR: 19
+
+jobs:
+  # Gate the deploy on the checks that can actually fail. `npm test` at the
+  # root runs the evaluator drift check first: the questionnaire branching
+  # logic is duplicated between api/ and patient-web/ (no shared package), and
+  # if the two copies have diverged the patient app computes a different "next
+  # question" than the API validates against. That is a silent clinical-logic
+  # bug, so it blocks the build job entirely.
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          # One source of truth, shared with whoever sets the server up. A
+          # version hardcoded here and a different one on the box is invisible
+          # until something fails at runtime.
+          node-version-file: .nvmrc
+
+      - name: Install root tooling
+        run: npm ci
+
+      - name: Install app deps
+        run: |
+          npm ci --prefix api
+          npm ci --prefix patient-web
+          npm ci --prefix doctor-web
+
+      # lint:ci rather than lint: the api's `lint` script passes --fix, which
+      # would make CI more lenient than a developer's own run.
+      - name: Lint
+        run: |
+          npm run lint:ci --prefix api
+          npm run lint --prefix patient-web
+          npm run lint --prefix doctor-web
+
+      # Evaluator drift check + api jest suite + patient-web vitest suite.
+      - name: Test
+        run: npm test
+
+  build:
+    needs: check
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+
+      # Unlike digital-opd, where the API URL is hardcoded in source, both web
+      # apps here read `import.meta.env.VITE_API_BASE_URL`, which Vite inlines
+      # at BUILD time. Unset, they fall back to http://localhost:4000/api and
+      # ship a bundle that silently cannot reach the API — so fail here instead.
+      - name: Require API_BASE_URL
+        run: |
+          if [ -z "${{ vars.API_BASE_URL }}" ]; then
+            echo "ERROR: repository variable API_BASE_URL is not set."
+            echo "Both web apps inline it at build time; without it they would"
+            echo "be built pointing at http://localhost:4000/api."
+            echo "Set it under Settings -> Secrets and variables -> Actions ->"
+            echo "Variables, e.g. API_BASE_URL=https://api.example.com/api"
+            exit 1
+          fi
+          echo "Building web apps against ${{ vars.API_BASE_URL }}"
+
+      # ---------- API (NestJS) ----------
+      - name: Install api deps
+        working-directory: api
+        run: npm ci
+
+      - name: Build api
+        working-directory: api
+        run: npm run build
+
+      # The umzug migrator globs `migrations/*.{ts,js}` with `cwd: __dirname`,
+      # so at runtime it reads dist/database/migrations — which `nest build`
+      # compiles. Nothing to ship separately (digital-opd needs a second zip
+      # here because its migrations are plain .js read from process.cwd()).
+      - name: Verify migrations compiled into dist
+        working-directory: api
+        run: |
+          count=$(ls dist/database/migrations/*.js 2>/dev/null | wc -l)
+          echo "compiled migrations: $count"
+          if [ "$count" -eq 0 ]; then
+            echo "ERROR: no compiled migrations in dist/database/migrations."
+            echo "The API would boot against an un-migrated schema and report"
+            echo "nothing wrong — DB_AUTO_SETUP would find zero pending"
+            echo "migrations and start happily."
+            exit 1
+          fi
+
+      - name: Zip api dist
+        working-directory: api/dist
+        run: zip -r ../../api-dist.zip .
+
+      - name: Stage api package files
+        run: |
+          cp api/package.json api-package.json
+          cp api/package-lock.json api-package-lock.json
+
+      # ---------- Patient web ----------
+      - name: Install patient-web deps
+        working-directory: patient-web
+        run: npm ci
+
+      - name: Build patient-web
+        working-directory: patient-web
+        env:
+          VITE_API_BASE_URL: ${{ vars.API_BASE_URL }}
+        run: npm run build
+
+      - name: Zip patient-web dist
+        working-directory: patient-web/dist
+        run: zip -r ../../patient-dist.zip .
+
+      # ---------- Doctor web ----------
+      - name: Install doctor-web deps
+        working-directory: doctor-web
+        run: npm ci
+
+      - name: Build doctor-web
+        working-directory: doctor-web
+        env:
+          VITE_API_BASE_URL: ${{ vars.API_BASE_URL }}
+        run: npm run build
+
+      - name: Zip doctor-web dist
+        working-directory: doctor-web/dist
+        run: zip -r ../../doctor-dist.zip .
+
+      - name: Upload build artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: deploy-bundle
+          path: |
+            api-dist.zip
+            patient-dist.zip
+            doctor-dist.zip
+            api-package.json
+            api-package-lock.json
+          retention-days: 1
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - name: Download build artifacts
+        uses: actions/download-artifact@v4
+        with:
+          name: deploy-bundle
+
+      - name: Configure SSH
+        env:
+          SSH_HOST: ${{ secrets.SSH_HOST }}
+          SSH_USER: ${{ secrets.SSH_USER }}
+          SSH_PRIVATE_KEY: ${{ secrets.SSH_PRIVATE_KEY }}
+        run: |
+          # Fail with a readable message rather than a bare exit code when a
+          # secret is missing (org secrets not shared with this repo, typo in
+          # the name, etc.).
+          missing=""
+          [ -n "$SSH_HOST" ]        || missing="$missing SSH_HOST"
+          [ -n "$SSH_USER" ]        || missing="$missing SSH_USER"
+          [ -n "$SSH_PRIVATE_KEY" ] || missing="$missing SSH_PRIVATE_KEY"
+          if [ -n "$missing" ]; then
+            echo "ERROR: empty or unset secret(s):$missing"
+            echo "Check Settings -> Secrets and variables -> Actions. If they are"
+            echo "org-level secrets, this repo must be in their 'Selected"
+            echo "repositories' list."
+            exit 1
+          fi
+
+          # Strip anything that is not a bare hostname: whitespace/newlines from
+          # pasting the secret, a URL scheme, a user@ prefix, a :port or /path.
+          HOST="$(printf '%s' "$SSH_HOST" | tr -d '[:space:]')"
+          HOST="${HOST#ssh://}"; HOST="${HOST#https://}"; HOST="${HOST#http://}"
+          HOST="${HOST##*@}"; HOST="${HOST%%/*}"; HOST="${HOST%%:*}"
+          echo "SSH_HOST_CLEAN=$HOST" >> "$GITHUB_ENV"
+
+          # Values are masked in logs, so report shape instead of content.
+          echo "SSH_HOST: ${#SSH_HOST} chars raw, ${#HOST} after cleaning"
+
+          if ! getent hosts "$HOST" >/dev/null 2>&1; then
+            echo "ERROR: SSH_HOST does not resolve from the GitHub runner."
+            echo "It must be a PUBLIC address reachable from the internet:"
+            echo "  - the public IP        e.g. 13.234.56.78"
+            echo "  - the public EC2 DNS   e.g. ec2-13-234-56-78.ap-south-1.compute.amazonaws.com"
+            echo "  - or a domain that points at the box"
+            echo "These do NOT work: ip-172-31-41-148 (the shell-prompt name),"
+            echo "172.31.x.x / 10.x.x.x (VPC-private), *.ec2.internal."
+            exit 1
+          fi
+
+          case "$HOST" in
+            10.*|192.168.*|172.1[6-9].*|172.2[0-9].*|172.3[01].*)
+              echo "ERROR: $HOST is a private VPC address — unreachable from GitHub."
+              exit 1 ;;
+          esac
+
+          mkdir -p ~/.ssh
+
+          # Must happen BEFORE any ssh/scp: without a known_hosts entry those
+          # abort with "Host key verification failed" rather than connecting.
+          if ! ssh-keyscan -T 10 "$HOST" >> ~/.ssh/known_hosts 2>/dev/null; then
+            echo "WARNING: ssh-keyscan got nothing from $HOST:22 — port 22 may"
+            echo "be closed to GitHub runners. Falling back to accept-new."
+          fi
+
+          # tr -d '\r': a key stored with CRLF endings still LOOKS correct but
+          # makes OpenSSH fail with "error in libcrypto".
+          printf '%s\n' "$SSH_PRIVATE_KEY" | tr -d '\r' > ~/.ssh/deploy_key
+          chmod 600 ~/.ssh/deploy_key
+
+          # GitHub masks every line of a multi-line secret, so the key's own
+          # text is unreadable in logs. Report counts instead — those are not
+          # secret-derived and come through unmasked.
+          lines=$(wc -l < ~/.ssh/deploy_key)
+          begins=$(grep -c -- '-----BEGIN' ~/.ssh/deploy_key || true)
+          ends=$(grep -c -- '-----END' ~/.ssh/deploy_key || true)
+          echo "deploy_key: lines=$lines begin_markers=$begins end_markers=$ends"
+
+          # ssh-keygen is the authority on whether the key is usable.
+          if ! ssh-keygen -y -f ~/.ssh/deploy_key >/dev/null 2>/tmp/keygen.err; then
+            echo "ERROR: OpenSSH cannot use this private key."
+            sed 's/^/  ssh-keygen: /' /tmp/keygen.err
+            if [ "$begins" -eq 0 ] || [ "$ends" -eq 0 ]; then
+              echo "  -> No BEGIN/END markers found: the secret is not a PEM"
+              echo "     private key (a .pub file? a truncated paste?)."
+            elif [ "$lines" -lt 3 ]; then
+              echo "  -> Only $lines line(s): the newlines were flattened."
+            else
+              echo "  -> Markers and line count look right, so the body is"
+              echo "     altered or the key has a passphrase (not supported)."
+            fi
+            echo "  Re-add it straight from the file, never via copy/paste:"
+            echo "    gh secret set SSH_PRIVATE_KEY < /path/to/key.pem"
+            exit 1
+          fi
+          echo "private key: parses OK"
+
+          # Public keys are not secret, and printing this one means the exact
+          # line needed in authorized_keys is available straight from the log.
+          echo "--- public key for this deploy key ---"
+          ssh-keygen -y -f ~/.ssh/deploy_key
+          ssh-keygen -lf ~/.ssh/deploy_key
+          echo "--------------------------------------"
+          echo "connecting as a ${#SSH_USER}-character username (ubuntu = 6)"
+
+          # A swapped pair of secrets is otherwise invisible: both are masked.
+          if [ "$SSH_USER" = "$HOST" ] || [ "$SSH_USER" = "$SSH_HOST" ]; then
+            echo "ERROR: SSH_USER holds the same value as SSH_HOST."
+            echo "SSH_USER must be the login name (e.g. 'ubuntu'), not the address."
+            exit 1
+          fi
+
+          # One clear failure point instead of scp's terse exit 255.
+          if ! ssh -i ~/.ssh/deploy_key -o IdentitiesOnly=yes -o BatchMode=yes \
+                   -o StrictHostKeyChecking=accept-new \
+                   -o ConnectTimeout=15 "$SSH_USER@$HOST" 'echo ok' \
+                   >/dev/null 2>/tmp/ssh.err; then
+            echo "ERROR: could not open an SSH session."
+            sed 's/^/  ssh: /' /tmp/ssh.err
+            if grep -qi 'host key verification' /tmp/ssh.err; then
+              echo "  -> known_hosts problem, not authentication."
+            elif grep -qi 'permission denied' /tmp/ssh.err; then
+              echo "  -> The server refused the key. Either:"
+              echo "     1. its public half is not in ~<user>/.ssh/authorized_keys"
+              echo "        copy the public key printed above onto the server:"
+              echo "          echo '<that line>' >> ~/.ssh/authorized_keys"
+              echo "          chmod 700 ~/.ssh && chmod 600 ~/.ssh/authorized_keys"
+              echo "     2. SSH_USER is wrong (should be 'ubuntu' on Ubuntu AMIs)"
+            elif grep -qi 'timed out\|refused' /tmp/ssh.err; then
+              echo "  -> Network: open port 22 to GitHub runners in the"
+              echo "     security group."
+            fi
+            exit 1
+          fi
+          echo "ssh: authenticated OK"
+
+      - name: Upload release
+        env:
+          SSH_USER: ${{ secrets.SSH_USER }}
+          RELEASE: filter-patient-${{ github.sha }}
+        run: |
+          scp -i ~/.ssh/deploy_key -o IdentitiesOnly=yes \
+            api-dist.zip patient-dist.zip doctor-dist.zip \
+            api-package.json api-package-lock.json \
+            "$SSH_USER@$SSH_HOST_CLEAN:/tmp/"
+
+          ssh -i ~/.ssh/deploy_key -o IdentitiesOnly=yes "$SSH_USER@$SSH_HOST_CLEAN" \
+            "mkdir -p /tmp/$RELEASE && mv /tmp/api-dist.zip /tmp/patient-dist.zip /tmp/doctor-dist.zip /tmp/api-package.json /tmp/api-package-lock.json /tmp/$RELEASE/"
+
+      - name: Deploy on server
+        env:
+          SSH_USER: ${{ secrets.SSH_USER }}
+          RELEASE: filter-patient-${{ github.sha }}
+        run: |
+          ssh -i ~/.ssh/deploy_key -o IdentitiesOnly=yes "$SSH_USER@$SSH_HOST_CLEAN" \
+            "ROOT='${{ env.ROOT }}' API_DIR='${{ env.API_DIR }}' DOCTOR_DIR='${{ env.DOCTOR_DIR }}' PATIENT_DIR='${{ env.PATIENT_DIR }}' PM2_API='${{ env.PM2_API }}' API_PORT='${{ env.API_PORT }}' HEALTH_PATH='${{ env.HEALTH_PATH }}' NODE_MIN_MAJOR='${{ env.NODE_MIN_MAJOR }}' NODE_MIN_MINOR='${{ env.NODE_MIN_MINOR }}' RELEASE='$RELEASE' bash -s" <<'REMOTE'
+          set -euo pipefail
+
+          export NVM_DIR="${NVM_DIR:-$HOME/.nvm}"
+          if [ -s "$NVM_DIR/nvm.sh" ]; then . "$NVM_DIR/nvm.sh"; fi
+
+          # Guard rail: every rm -rf below is derived from these vars, so refuse
+          # to run at all if they aren't exactly what's expected. Each removal
+          # additionally uses ${VAR:?}, so an empty variable aborts the script
+          # rather than expanding to a top-level path.
+          case "$ROOT" in
+            /var/www/filter-patient) : ;;
+            *) echo "REFUSING TO DEPLOY: unexpected ROOT '$ROOT'"; exit 1 ;;
+          esac
+          case "$API_DIR/$DOCTOR_DIR/$PATIENT_DIR" in
+            filter-patient-api/doctor-web/patient-web) : ;;
+            *) echo "REFUSING TO DEPLOY: unexpected app dir names"; exit 1 ;;
+          esac
+
+          command -v unzip >/dev/null || { echo "unzip is not installed (sudo apt install unzip)"; exit 1; }
+          command -v pm2   >/dev/null || { echo "pm2 is not on PATH for this ssh session"; exit 1; }
+          command -v curl  >/dev/null || { echo "curl is not installed"; exit 1; }
+          command -v node  >/dev/null || { echo "node is not on PATH for this ssh session (is nvm sourced for non-interactive shells?)"; exit 1; }
+          command -v npm   >/dev/null || { echo "npm is not on PATH for this ssh session"; exit 1; }
+
+          # The Node that runs `npm ci --omit=dev` below decides what lands in
+          # node_modules. Checked here so the reason is the first line of the
+          # log instead of a health-check timeout several minutes later.
+          NODE_MAJOR=$(node -p 'process.versions.node.split(".")[0]')
+          NODE_MINOR=$(node -p 'process.versions.node.split(".")[1]')
+          echo "server node $(node -v), npm $(npm -v) (needs >= ${NODE_MIN_MAJOR}.${NODE_MIN_MINOR}.0)"
+          if [ "$NODE_MAJOR" -lt "$NODE_MIN_MAJOR" ] ||
+             { [ "$NODE_MAJOR" -eq "$NODE_MIN_MAJOR" ] && [ "$NODE_MINOR" -lt "$NODE_MIN_MINOR" ]; }; then
+            echo "REFUSING TO DEPLOY: this server runs $(node -v), below the"
+            echo "  Node >= ${NODE_MIN_MAJOR}.${NODE_MIN_MINOR}.0 the API requires."
+            echo "  Nothing has been changed on the server."
+            echo "  Fix, as the deploy user:"
+            echo "    nvm install 22 && nvm alias default 22   # 22 is what .nvmrc pins"
+            echo "    pm2 update            # restarts pm2 itself under the new Node"
+            echo "  Then re-run this workflow."
+            exit 1
+          fi
+
+          # pm2 keeps running under whatever Node it was started with, so the
+          # API's runtime version can lag the shell's until `pm2 update`. Worth
+          # saying out loud rather than guessing at it from a crash later.
+          PM2_NODE=$(pm2 report 2>/dev/null | grep -iE '^\s*node version' | head -1 | awk '{print $NF}' || true)
+          if [ -n "$PM2_NODE" ]; then
+            echo "pm2 daemon is running under node $PM2_NODE"
+          fi
+
+          # The EADDRINUSE trap, learned from digital-opd: if our pm2 process
+          # does not exist but the port is already taken, something else on this
+          # shared box owns it. pm2 would start a second process, it would die,
+          # and the health check would be answered by the stranger — a green
+          # deploy that changed nothing. Refuse instead.
+          if ! pm2 describe "$PM2_API" >/dev/null 2>&1; then
+            port_taken=no
+            if command -v ss >/dev/null && ss -ltn 2>/dev/null | grep -qE "[:.]${API_PORT}[[:space:]]"; then
+              port_taken=yes
+            elif curl -s -o /dev/null --max-time 3 "http://127.0.0.1:${API_PORT}/" 2>/dev/null; then
+              port_taken=yes
+            fi
+            if [ "$port_taken" = yes ]; then
+              echo "REFUSING TO DEPLOY: port ${API_PORT} is already in use, but"
+              echo "  there is no pm2 process named '${PM2_API}'."
+              echo "  Something else on this box owns the port. Either stop it,"
+              echo "  or change API_PORT in this workflow and PORT in"
+              echo "  ${ROOT}/${API_DIR}/.env to a free port."
+              echo "  pm2 list:"
+              pm2 list || true
+              exit 1
+            fi
+          fi
+
+          RELDIR="/tmp/$RELEASE"
+
+          deploy_frontend () {
+            local name="${1:?deploy_frontend needs an app dir name}"
+            local zip="${2:?deploy_frontend needs a zip name}"
+
+            rm -rf "${ROOT:?}/${name:?}-new"
+            mkdir -p "$ROOT/${name}-new"
+            unzip -q "$RELDIR/$zip" -d "$ROOT/${name}-new"
+
+            # Previous version kept as "${name}-old" (overwritten next deploy)
+            # for a manual rollback if a bad frontend build ever ships:
+            #   rm -rf $ROOT/<name> && mv $ROOT/<name>-old $ROOT/<name>
+            rm -rf "${ROOT:?}/${name:?}-old"
+            if [ -d "$ROOT/$name" ]; then
+              mv "$ROOT/$name" "$ROOT/${name}-old"
+            fi
+            mv "$ROOT/${name}-new" "$ROOT/$name"
+          }
+
+          # Health here is NOT "answers 200". /api/health returns 200 with
+          # {"status":"degraded"} when the database is unreachable, so a
+          # status-code-only check would pass a deploy whose API cannot read a
+          # single patient. The body is what decides.
+          wait_healthy () {
+            local url="$1" tries="$2" label="$3"
+            local body
+            for attempt in $(seq 1 "$tries"); do
+              sleep 2
+              body=$(curl -s --max-time 5 "$url" || echo "")
+              case "$body" in
+                *'"status":"ok"'*)
+                  echo "$label healthy: $body"
+                  return 0 ;;
+                *'"status":"degraded"'*)
+                  echo "$label attempt $attempt: up but DEGRADED — database unreachable" ;;
+                "")
+                  echo "$label attempt $attempt: no response yet" ;;
+                *)
+                  echo "$label attempt $attempt: unexpected body: $(printf '%.120s' "$body")" ;;
+              esac
+            done
+            return 1
+          }
+
+          # ---------- Frontends ----------
+          # Static files, no process to restart: nginx serves whatever the
+          # directory holds, so the move is the whole deploy.
+          #
+          # Both apps use BrowserRouter, so nginx must fall back to index.html
+          # for unknown paths (`try_files $uri $uri/ /index.html;`) or a patient
+          # reloading on /a/<token> gets a 404 — and that is the
+          # resume-a-saved-link flow. This workflow cannot verify nginx's
+          # config; it is a one-time server setup step.
+          deploy_frontend "$DOCTOR_DIR" "doctor-dist.zip"
+          deploy_frontend "$PATIENT_DIR" "patient-dist.zip"
+
+          # ---------- API ----------
+          rm -rf "${ROOT:?}/${API_DIR:?}-new"
+          mkdir -p "$ROOT/$API_DIR-new"
+          unzip -q "$RELDIR/api-dist.zip" -d "$ROOT/$API_DIR-new"
+
+          cp "$RELDIR/api-package.json" "$ROOT/$API_DIR-new/package.json"
+          cp "$RELDIR/api-package-lock.json" "$ROOT/$API_DIR-new/package-lock.json"
+
+          # .env is never part of a build — carry the live one forward so a
+          # deploy never touches DATABASE_*, DOCTOR_PANEL_PASSCODE,
+          # SESSION_SECRET, COOKIE_* or CORS_ORIGINS.
+          if [ -f "$ROOT/$API_DIR/.env" ]; then
+            cp "$ROOT/$API_DIR/.env" "$ROOT/$API_DIR-new/.env"
+          else
+            echo "REFUSING TO DEPLOY: no .env at $ROOT/$API_DIR/.env."
+            echo "  The API needs DATABASE_*, DOCTOR_PANEL_PASSCODE and"
+            echo "  SESSION_SECRET. Create it on the server once (see"
+            echo "  api/.env.example), then re-run. For a deployment also set:"
+            echo "    COOKIE_SECURE=true"
+            echo "    COOKIE_SAMESITE=none   # only if the web apps are on another domain"
+            echo "    TRUST_PROXY=true       # behind nginx"
+            echo "    CORS_ORIGINS=https://...,https://...   # empty means ALL origins"
+            exit 1
+          fi
+
+          cd "$ROOT/$API_DIR-new"
+          # --omit=dev: ts-node is a devDependency, so the migrate / seed /
+          # db:setup npm scripts do not work on the server. They are not needed
+          # — the app migrates and seeds itself on boot (DB_AUTO_SETUP, default
+          # true). With more than one instance, set DB_AUTO_SETUP=false and run
+          # the migration as a separate step, or they race on startup.
+          npm ci --omit=dev
+
+          rm -rf "${ROOT:?}/${API_DIR:?}-old"
+          if [ -d "$ROOT/$API_DIR" ]; then
+            mv "$ROOT/$API_DIR" "$ROOT/$API_DIR-old"
+          fi
+          mv "$ROOT/$API_DIR-new" "$ROOT/$API_DIR"
+
+          if pm2 describe "$PM2_API" >/dev/null 2>&1; then
+            pm2 restart "$PM2_API" --update-env
+          else
+            pm2 start main.js --name "$PM2_API" --cwd "$ROOT/$API_DIR"
+          fi
+          pm2 save
+
+          # ---------- Health check + auto-rollback ----------
+          # The API runs migrations and seeds the questionnaire on boot, so a
+          # first start against a new database does real work before answering.
+          if wait_healthy "http://127.0.0.1:${API_PORT}${HEALTH_PATH}" 20 "API"; then
+            echo "Deployment successful."
+            rm -rf "${ROOT:?}/${API_DIR:?}-old"
+          else
+            echo "API health check failed."
+            pm2 logs "$PM2_API" --lines 50 --nostream || true
+            if [ -d "$ROOT/$API_DIR-old" ]; then
+              echo "Rolling back to the previous API release..."
+              rm -rf "${ROOT:?}/${API_DIR:?}"
+              mv "$ROOT/$API_DIR-old" "$ROOT/$API_DIR"
+              cd "$ROOT/$API_DIR"
+              pm2 restart "$PM2_API" --update-env
+              pm2 save
+            else
+              echo "No previous release to roll back to — leaving this one in place."
+            fi
+            # The frontends are already swapped at this point. They are static
+            # and backward-compatible with the previous API, so they are left
+            # alone; roll one back by hand if ever needed:
+            #   rm -rf $ROOT/<name> && mv $ROOT/<name>-old $ROOT/<name>
+            exit 1
+          fi
+
+          rm -rf "${RELDIR:?}"
+          echo "Deployment complete: $RELEASE"
+          REMOTE

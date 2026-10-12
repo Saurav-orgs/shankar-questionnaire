@@ -15,7 +15,11 @@ import * as O from './options';
 export const sections: Section[] = [
   { key: 'details', order: 1, title: t('Patient details', 'मरीज़ का विवरण') },
   { key: 'problem', order: 2, title: t('Main problem', 'मुख्य तकलीफ़') },
-  { key: 'treatment', order: 3, title: t('Previous treatment', 'अब तक का इलाज') },
+  {
+    key: 'treatment',
+    order: 3,
+    title: t('Previous treatment', 'अब तक का इलाज'),
+  },
   {
     key: 'imaging',
     order: 4,
@@ -80,7 +84,7 @@ export const questions: Question[] = [
     required: true,
     options: O.YES_NO,
     text: t(
-      "Have you consulted Dr. Acharya before?",
+      'Have you consulted Dr. Acharya before?',
       'क्या आप पहले डॉ. आचार्य से मिल चुके हैं?',
     ),
   },

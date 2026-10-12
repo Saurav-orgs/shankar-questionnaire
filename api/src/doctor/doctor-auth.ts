@@ -34,7 +34,9 @@ export class DoctorAuthService {
   /** token = <issuedAtMs>.<hmac(issuedAtMs)>. */
   issueToken(): string {
     const issued = String(Date.now());
-    const sig = createHmac('sha256', this.secret()).update(issued).digest('hex');
+    const sig = createHmac('sha256', this.secret())
+      .update(issued)
+      .digest('hex');
     return `${issued}.${sig}`;
   }
 

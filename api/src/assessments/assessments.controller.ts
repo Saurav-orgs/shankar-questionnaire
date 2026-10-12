@@ -9,11 +9,7 @@ import {
 } from '@nestjs/common';
 import { Throttle } from '@nestjs/throttler';
 import { AssessmentsService } from './assessments.service';
-import {
-  CreateAssessmentDto,
-  PatchAnswersDto,
-  SetLanguageDto,
-} from './dto';
+import { CreateAssessmentDto, PatchAnswersDto, SetLanguageDto } from './dto';
 
 @Controller('assessments')
 export class AssessmentsController {
@@ -30,10 +26,7 @@ export class AssessmentsController {
   }
 
   @Get(':token')
-  get(
-    @Param('token') token: string,
-    @Query('schema') schema?: string,
-  ) {
+  get(@Param('token') token: string, @Query('schema') schema?: string) {
     return this.assessments.getState(token, schema === 'true');
   }
 

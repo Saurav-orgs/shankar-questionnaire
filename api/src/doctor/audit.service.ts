@@ -39,9 +39,10 @@ export class AuditService {
         userAgent: entry.userAgent ?? null,
       } as Partial<AuditLog> as AuditLog);
     } catch (error) {
-      const message =
-        error instanceof Error ? error.message : 'unknown error';
-      this.logger.error(`Failed to write audit log (${entry.action}): ${message}`);
+      const message = error instanceof Error ? error.message : 'unknown error';
+      this.logger.error(
+        `Failed to write audit log (${entry.action}): ${message}`,
+      );
     }
   }
 }

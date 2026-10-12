@@ -15,9 +15,7 @@ export function buildDatabaseOptions(
     password: config.get<string>('DATABASE_PASSWORD'),
     database: config.get<string>('DATABASE_NAME'),
     logging:
-      config.get<string>('DATABASE_LOGGING') === 'true'
-        ? console.log
-        : false,
+      config.get<string>('DATABASE_LOGGING') === 'true' ? console.log : false,
     dialectOptions: useSsl
       ? { ssl: { require: true, rejectUnauthorized: false } }
       : {},

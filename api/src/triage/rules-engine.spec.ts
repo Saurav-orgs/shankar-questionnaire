@@ -113,7 +113,10 @@ describe('scoring table — one patient per row', () => {
     },
     {
       name: 'Previous spine surgery',
-      answers: { treatment: ['previous_surgery'], treatment_response: 'partial' },
+      answers: {
+        treatment: ['previous_surgery'],
+        treatment_response: 'partial',
+      },
       rule: 'SCORE_PREVIOUS_SURGERY',
       points: 2,
     },
@@ -171,10 +174,12 @@ describe('scoring table — one patient per row', () => {
   });
 
   it('routine-only deduction needs no neuro answer anywhere on Q1–Q3', () => {
-    expect(codes(run({ weakness: 'stable' }))).not.toContain('SCORE_ROUTINE_ONLY');
-    expect(codes(run({ main_problem: ['back_pain', 'deformity'] }))).not.toContain(
+    expect(codes(run({ weakness: 'stable' }))).not.toContain(
       'SCORE_ROUTINE_ONLY',
     );
+    expect(
+      codes(run({ main_problem: ['back_pain', 'deformity'] })),
+    ).not.toContain('SCORE_ROUTINE_ONLY');
     expect(codes(run({ main_problem: ['neck_pain', 'back_pain'] }))).toContain(
       'SCORE_ROUTINE_ONLY',
     );
@@ -339,11 +344,14 @@ describe('category rules — one patient each', () => {
     },
   ];
 
-  it.each(scenarios)('$name -> $category ($rule)', ({ answers, category, rule }) => {
-    const result = run(answers);
-    expect(codes(result)).toContain(rule);
-    expect(result.category).toBe(category);
-  });
+  it.each(scenarios)(
+    '$name -> $category ($rule)',
+    ({ answers, category, rule }) => {
+      const result = run(answers);
+      expect(codes(result)).toContain(rule);
+      expect(result.category).toBe(category);
+    },
+  );
 
   it('covers every category rule', () => {
     const covered = new Set(scenarios.map((s) => s.rule));
@@ -429,10 +437,15 @@ describe('precedence', () => {
   it('second opinion after surgery was advised is A, never D', () => {
     // The SOP's carve-out: do not auto-reject a second opinion sought for
     // surgical evaluation after surgery has been advised.
-    const result = run({ surgery_advised: 'yes', consult_reason: 'second_opinion' });
+    const result = run({
+      surgery_advised: 'yes',
+      consult_reason: 'second_opinion',
+    });
     expect(result.category).toBe('SURGICAL');
     expect(codes(result)).not.toContain('D_SECOND_OPINION_NO_ADVICE');
-    expect(result.secondaryNotes.join(' ')).toMatch(/potentially appropriate surgical consultation/i);
+    expect(result.secondaryNotes.join(' ')).toMatch(
+      /potentially appropriate surgical consultation/i,
+    );
   });
 });
 
@@ -467,7 +480,9 @@ describe('advisory notes', () => {
   it('flags stable weakness, which the table does not score', () => {
     const result = run({ weakness: 'stable' });
     expect(result.score).toBe(0);
-    expect(result.secondaryNotes.join(' ')).toMatch(/stable arm\/leg weakness/i);
+    expect(result.secondaryNotes.join(' ')).toMatch(
+      /stable arm\/leg weakness/i,
+    );
   });
 
   it('flags an injury without neurological symptoms', () => {

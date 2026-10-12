@@ -57,7 +57,11 @@ const RADIATING_PAIN: Condition = {
   value: ['arm_pain', 'leg_pain'],
 };
 
-const ANY_WEAKNESS: Condition = { q: 'weakness', op: 'in', value: WEAKNESS_ANY };
+const ANY_WEAKNESS: Condition = {
+  q: 'weakness',
+  op: 'in',
+  value: WEAKNESS_ANY,
+};
 const ANY_WALKING: Condition = {
   q: 'walking_balance',
   op: 'in',
@@ -187,7 +191,8 @@ export const rules: TriageRule[] = [
     code: 'SCORE_PREVIOUS_SURGERY',
     label: 'Previous spine surgery with recurrent/new problem',
     points: 2,
-    explain: 'Has had spine surgery before (Q5) and is presenting with a problem.',
+    explain:
+      'Has had spine surgery before (Q5) and is presenting with a problem.',
     when: { q: 'treatment', op: 'includes', value: ['previous_surgery'] },
   },
   {
@@ -235,7 +240,10 @@ export const rules: TriageRule[] = [
     explain:
       'Reports a spine injury/fracture (Q1) together with weakness, walking difficulty or numbness.',
     when: {
-      all: [{ q: 'main_problem', op: 'includes', value: ['injury'] }, ANY_NEURO],
+      all: [
+        { q: 'main_problem', op: 'includes', value: ['injury'] },
+        ANY_NEURO,
+      ],
     },
   },
   {
@@ -288,7 +296,8 @@ export const rules: TriageRule[] = [
   }),
   surgical({
     code: 'A_STRUCTURAL_SIGNIFICANT',
-    label: 'Known stenosis/spondylolisthesis/myelopathy with significant symptoms',
+    label:
+      'Known stenosis/spondylolisthesis/myelopathy with significant symptoms',
     severity: 71,
     explain:
       'A doctor has mentioned canal stenosis, spondylolisthesis or cervical myelopathy (Q8), with weakness, walking difficulty, or radiating pain that has lasted over three months or not improved with treatment.',
@@ -418,7 +427,8 @@ export const rules: TriageRule[] = [
     code: 'ADVISORY_SURGERY_DETAIL',
     label: 'Advised surgery named',
     explain: 'Patient wrote down which surgery was advised.',
-    secondaryNote: 'Patient named the surgery that was advised — see their note.',
+    secondaryNote:
+      'Patient named the surgery that was advised — see their note.',
     when: { q: 'surgery_advised_detail', op: 'answered' },
   },
   {
@@ -451,7 +461,8 @@ export const rules: TriageRule[] = [
     code: 'ADVISORY_PREVIOUS_PATIENT',
     label: 'Previous patient',
     explain: 'Has consulted Dr. Acharya before.',
-    secondaryNote: 'Previous patient of Dr. Acharya — look up the existing file.',
+    secondaryNote:
+      'Previous patient of Dr. Acharya — look up the existing file.',
     when: { q: 'previous_patient', op: 'eq', value: 'yes' },
   },
 ];

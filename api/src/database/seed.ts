@@ -21,7 +21,8 @@ export const DOCTOR = {
   bioHi:
     'प्रिय मरीज़,\n\nआपकी अपॉइंटमेंट सही ढंग से तय करने में हमारी मदद के लिए, कृपया नीचे दिए गए सवालों के जवाब दें:',
   clinicName: 'Sir Ganga Ram Hospital',
-  clinicAddress: 'Sir Ganga Ram Hospital (SGRH), Rajinder Nagar, New Delhi, India',
+  clinicAddress:
+    'Sir Ganga Ram Hospital (SGRH), Rajinder Nagar, New Delhi, India',
   clinicPhone: '+91 00000 00000',
   emergencyPhone: '+91 00000 00000',
 };
@@ -79,7 +80,9 @@ export async function runSeed(
       throw new Error('Seed could not create or find a doctor row.');
     }
     logger.log(
-      doctor ? `Created doctor ${doctorId}` : `Doctor already present (${doctorId})`,
+      doctor
+        ? `Created doctor ${doctorId}`
+        : `Doctor already present (${doctorId})`,
     );
 
     // There is no profile editor, so the seed owns the doctor's details: keep

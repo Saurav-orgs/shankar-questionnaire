@@ -58,7 +58,9 @@ export interface AssessmentState {
 }
 
 /** Answers plus the detail columns, keyed as the schema sees them. */
-export function buildEvaluationContext(assessment: Assessment): EvaluationContext {
+export function buildEvaluationContext(
+  assessment: Assessment,
+): EvaluationContext {
   return {
     ...assessment.answers,
     name: assessment.patientName,
@@ -144,7 +146,10 @@ export class AssessmentsService {
     };
   }
 
-  async getState(token: string, includeSchema = false): Promise<AssessmentState> {
+  async getState(
+    token: string,
+    includeSchema = false,
+  ): Promise<AssessmentState> {
     const { assessment, version } = await this.load(token);
 
     if (!includeSchema) return this.toState(assessment, version.schema);
@@ -173,7 +178,9 @@ export class AssessmentsService {
     const { assessment, version } = await this.load(token);
 
     if (assessment.status === 'submitted') {
-      throw new ConflictException('This assessment has already been submitted.');
+      throw new ConflictException(
+        'This assessment has already been submitted.',
+      );
     }
 
     const schema = version.schema;

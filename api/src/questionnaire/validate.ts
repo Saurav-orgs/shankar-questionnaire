@@ -83,7 +83,9 @@ export function validateQuestionnaire(
 
     if (CHOICE_TYPES.has(question.type)) {
       if (!question.options?.length) {
-        errors.push(`Question "${question.key}" is a choice type with no options.`);
+        errors.push(
+          `Question "${question.key}" is a choice type with no options.`,
+        );
       } else {
         const seen = new Set<string>();
         for (const option of question.options) {
@@ -173,7 +175,9 @@ export function validateQuestionnaire(
       // Only the category pass sees `score`; a scoring rule that read it
       // would be reading a total that has not been computed yet.
       if (leaf.q === 'score' && rule.kind !== 'category') {
-        errors.push(`Rule "${rule.code}" reads "score" but is not a category rule.`);
+        errors.push(
+          `Rule "${rule.code}" reads "score" but is not a category rule.`,
+        );
       }
       checkLeaf(leaf, `Rule "${rule.code}"`);
     });

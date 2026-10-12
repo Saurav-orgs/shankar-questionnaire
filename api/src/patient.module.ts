@@ -3,7 +3,12 @@ import { SequelizeModule } from '@nestjs/sequelize';
 import { AssessmentsController } from './assessments/assessments.controller';
 import { AssessmentsService } from './assessments/assessments.service';
 import { DoctorsService } from './doctors/doctors.service';
-import { Assessment, Doctor, QuestionnaireVersion, TriageResult } from './models';
+import {
+  Assessment,
+  Doctor,
+  QuestionnaireVersion,
+  TriageResult,
+} from './models';
 import { QuestionnaireController } from './questionnaire/questionnaire.controller';
 import { QuestionnaireService } from './questionnaire/questionnaire.service';
 import { TriageService } from './triage/triage.service';

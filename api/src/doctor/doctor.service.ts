@@ -75,16 +75,14 @@ export class DoctorService {
     });
 
     const reviewedIds = new Set(
-      (
-        await this.reviews.findAll({ attributes: ['assessmentId'] })
-      ).map((r) => r.assessmentId),
+      (await this.reviews.findAll({ attributes: ['assessmentId'] })).map(
+        (r) => r.assessmentId,
+      ),
     );
 
     const mapped: DashboardRow[] = rows
       .filter(
-        (a) =>
-          !params.category ||
-          a.triageResult?.category === params.category,
+        (a) => !params.category || a.triageResult?.category === params.category,
       )
       .map((a) => {
         const version = null; // main-complaint label resolved below via answers
@@ -122,9 +120,7 @@ export class DoctorService {
       const ua = URGENCY_RANK[a.urgency ?? 'non_urgent'] ?? 9;
       const ub = URGENCY_RANK[b.urgency ?? 'non_urgent'] ?? 9;
       if (ua !== ub) return ua - ub;
-      return (
-        (b.submittedAt?.getTime() ?? 0) - (a.submittedAt?.getTime() ?? 0)
-      );
+      return (b.submittedAt?.getTime() ?? 0) - (a.submittedAt?.getTime() ?? 0);
     });
   }
 
@@ -143,7 +139,8 @@ export class DoctorService {
     const version = await this.versions.findByPk(
       assessment.questionnaireVersionId,
     );
-    if (!version) throw new NotFoundException('Questionnaire version not found.');
+    if (!version)
+      throw new NotFoundException('Questionnaire version not found.');
 
     const labels = buildLabelLookup(version.schema);
     const review = await this.reviews.findOne({
@@ -240,7 +237,8 @@ export class DoctorService {
 
   async questionnaireLabels(versionId: string) {
     const version = await this.versions.findByPk(versionId);
-    if (!version) throw new NotFoundException('Questionnaire version not found.');
+    if (!version)
+      throw new NotFoundException('Questionnaire version not found.');
     return { version: version.version, schema: version.schema };
   }
 }

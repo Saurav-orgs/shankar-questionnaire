@@ -20,7 +20,11 @@ export function buildMigrator(sequelize: Sequelize) {
     migrations: {
       glob: ['migrations/*.{ts,js}', { cwd: __dirname, ignore: ['**/*.d.ts'] }],
       resolve: ({ name, path, context }) => {
-        // eslint-disable-next-line @typescript-eslint/no-var-requires
+        // umzug hands us a path discovered at runtime, so the module has to
+        // be loaded dynamically; a static import cannot express this. Both
+        // rule names are listed because typescript-eslint v8 renamed
+        // no-var-requires to no-require-imports.
+        // eslint-disable-next-line @typescript-eslint/no-require-imports, @typescript-eslint/no-var-requires
         const migration = require(path as string);
         return {
           name: name.replace(/\.js$/, '.ts'),

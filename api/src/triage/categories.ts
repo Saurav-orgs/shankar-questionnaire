@@ -33,7 +33,8 @@ export const CATEGORY_INFO: Record<TriageCategory, CategoryInfo> = {
     letter: 'B',
     emoji: '🟡',
     name: 'POSSIBLE SURGICAL CASE',
-    action: 'Review MRI/report and questionnaire, then allocate a suitable slot.',
+    action:
+      'Review MRI/report and questionnaire, then allocate a suitable slot.',
   },
   ROUTINE: {
     letter: 'C',

@@ -17,13 +17,13 @@ export interface DoctorProfile {
 
 @Injectable()
 export class DoctorsService {
-  constructor(
-    @InjectModel(Doctor) private readonly doctors: typeof Doctor,
-  ) {}
+  constructor(@InjectModel(Doctor) private readonly doctors: typeof Doctor) {}
 
   /** The POC has a single doctor. Multi-tenancy is out of scope — plan.md §15. */
   async getPrimary(): Promise<Doctor> {
-    const doctor = await this.doctors.findOne({ order: [['createdAt', 'ASC']] });
+    const doctor = await this.doctors.findOne({
+      order: [['createdAt', 'ASC']],
+    });
     if (!doctor) {
       throw new NotFoundException('No doctor configured. Run `npm run seed`.');
     }

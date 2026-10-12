@@ -70,7 +70,11 @@ export const TREATMENTS: QuestionOption[] = [
   opt('medicines', 'Medicines', 'दवाइयाँ'),
   opt('physio', 'Physiotherapy/exercises', 'फ़िज़ियोथेरेपी / व्यायाम'),
   opt('injections', 'Injection', 'इंजेक्शन'),
-  opt('previous_surgery', 'Previous spine surgery', 'पहले रीढ़ की सर्जरी हो चुकी है'),
+  opt(
+    'previous_surgery',
+    'Previous spine surgery',
+    'पहले रीढ़ की सर्जरी हो चुकी है',
+  ),
   opt('other', 'Other', 'अन्य'),
   opt('none', 'No treatment', 'कोई इलाज नहीं'),
 ];
@@ -90,8 +94,16 @@ export const TREATMENT_RESPONSE: QuestionOption[] = [
  */
 export const DIAGNOSIS: QuestionOption[] = [
   opt('disc_prolapse', 'Disc prolapse', 'डिस्क प्रोलैप्स (डिस्क खिसकना)'),
-  opt('canal_stenosis', 'Canal stenosis', 'कैनाल स्टेनोसिस (नस की नली सिकुड़ना)'),
-  opt('spondylolisthesis', 'Spondylolisthesis', 'स्पॉन्डिलोलिस्थीसिस (मनका खिसकना)'),
+  opt(
+    'canal_stenosis',
+    'Canal stenosis',
+    'कैनाल स्टेनोसिस (नस की नली सिकुड़ना)',
+  ),
+  opt(
+    'spondylolisthesis',
+    'Spondylolisthesis',
+    'स्पॉन्डिलोलिस्थीसिस (मनका खिसकना)',
+  ),
   opt('cervical_myelopathy', 'Cervical myelopathy', 'सर्वाइकल मायलोपैथी'),
   opt('deformity_scoliosis', 'Deformity/scoliosis', 'टेढ़ापन / स्कोलियोसिस'),
   opt('fracture', 'Fracture', 'फ्रैक्चर'),

@@ -12,11 +12,10 @@ export interface LocalizedOption {
   label: string;
 }
 
-export interface LocalizedQuestion
-  extends Omit<
-    Question,
-    'text' | 'help' | 'options' | 'minLabel' | 'maxLabel'
-  > {
+export interface LocalizedQuestion extends Omit<
+  Question,
+  'text' | 'help' | 'options' | 'minLabel' | 'maxLabel'
+> {
   text: string;
   help?: string;
   options?: LocalizedOption[];

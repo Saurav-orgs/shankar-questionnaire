@@ -73,6 +73,8 @@ export class TriageService {
       return existing;
     }
 
-    return this.triageResults.create(payload as Partial<TriageResult> as TriageResult);
+    return this.triageResults.create(
+      payload as Partial<TriageResult> as TriageResult,
+    );
   }
 }

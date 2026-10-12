@@ -143,11 +143,7 @@ export interface QuestionnaireSchema {
  *   REPORT_ONLY ⚫ D   — report-only / second-opinion request
  */
 export type TriageCategory =
-  | 'URGENT'
-  | 'SURGICAL'
-  | 'REVIEW'
-  | 'ROUTINE'
-  | 'REPORT_ONLY';
+  'URGENT' | 'SURGICAL' | 'REVIEW' | 'ROUTINE' | 'REPORT_ONLY';
 
 export const TRIAGE_CATEGORIES: TriageCategory[] = [
   'URGENT',
@@ -159,11 +155,7 @@ export const TRIAGE_CATEGORIES: TriageCategory[] = [
 
 /** `priority` sits between urgent and routine — the SURGICAL bucket's slot. */
 export type TriageUrgency =
-  | 'emergency'
-  | 'urgent'
-  | 'priority'
-  | 'routine'
-  | 'non_urgent';
+  'emergency' | 'urgent' | 'priority' | 'routine' | 'non_urgent';
 
 interface RuleBase {
   code: string;

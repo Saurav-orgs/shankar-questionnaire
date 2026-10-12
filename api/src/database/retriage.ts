@@ -44,7 +44,9 @@ async function main() {
         `${(assessment.patientName ?? '—').padEnd(24)} v${version.version}  ${result.category.padEnd(11)} score ${String(result.score ?? '—').padStart(3)}  ${result.summarySource}`,
       );
     }
-    console.log(`\nRe-triaged ${done} of ${assessments.length} submitted assessments.`);
+    console.log(
+      `\nRe-triaged ${done} of ${assessments.length} submitted assessments.`,
+    );
   } finally {
     await app.close();
   }

@@ -66,7 +66,7 @@ describe('questionnaire v2 integrity', () => {
     ]);
   });
 
-  it('groups the questions into the form\'s sections A–E', () => {
+  it("groups the questions into the form's sections A–E", () => {
     expect(questionnaireV2.sections.map((s) => s.key)).toEqual([
       'details',
       'problem',
@@ -94,7 +94,8 @@ describe('questionnaire v2 integrity', () => {
     ];
     const reachable = new Set<string>();
     for (const ctx of contexts) {
-      for (const q of visibleQuestions(questionnaireV2, ctx)) reachable.add(q.key);
+      for (const q of visibleQuestions(questionnaireV2, ctx))
+        reachable.add(q.key);
     }
     const unreachable = questionnaireV2.questions
       .map((q) => q.key)
@@ -118,16 +119,18 @@ describe('branching', () => {
     expect(keysFor({ ...base, main_problem: ['back_pain'] })).not.toContain(
       'main_problem_other',
     );
-    expect(keysFor({ ...base, main_problem: ['back_pain', 'other'] })).toContain(
-      'main_problem_other',
-    );
+    expect(
+      keysFor({ ...base, main_problem: ['back_pain', 'other'] }),
+    ).toContain('main_problem_other');
   });
 
   it('asks what the doctor said only when the diagnosis is "other"', () => {
     expect(keysFor({ ...base, diagnosis: ['disc_prolapse'] })).not.toContain(
       'diagnosis_other',
     );
-    expect(keysFor({ ...base, diagnosis: ['other'] })).toContain('diagnosis_other');
+    expect(keysFor({ ...base, diagnosis: ['other'] })).toContain(
+      'diagnosis_other',
+    );
   });
 
   it('skips "did treatment help" when no treatment was tried', () => {

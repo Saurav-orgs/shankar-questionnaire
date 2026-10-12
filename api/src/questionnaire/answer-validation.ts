@@ -69,7 +69,8 @@ export function validateAnswer(
       if (!Array.isArray(value)) return 'Expected a list of choices.';
       const codes = new Set(question.options?.map((o) => o.code) ?? []);
       for (const item of value) {
-        if (!codes.has(String(item))) return `"${String(item)}" is not a valid choice.`;
+        if (!codes.has(String(item)))
+          return `"${String(item)}" is not a valid choice.`;
       }
       if (new Set(value.map(String)).size !== value.length) {
         return 'Duplicate choices.';
@@ -108,7 +109,10 @@ export function findContradictions(
     );
   }
 
-  if (problems.includes('walking_balance') && answers.walking_balance === 'no') {
+  if (
+    problems.includes('walking_balance') &&
+    answers.walking_balance === 'no'
+  ) {
     notes.push(
       'Selected "difficulty walking/balance" as a main problem, but answered no to walking difficulty.',
     );
@@ -132,7 +136,10 @@ export function findContradictions(
     );
   }
 
-  if (answers.has_imaging === 'no' && answers.consult_reason === 'report_review') {
+  if (
+    answers.has_imaging === 'no' &&
+    answers.consult_reason === 'report_review'
+  ) {
     notes.push('Has no imaging, but only wants a report reviewed.');
   }
 
@@ -140,7 +147,9 @@ export function findContradictions(
     answers.consult_reason === 'worsening_despite_treatment' &&
     treatment.includes('none')
   ) {
-    notes.push('Reports worsening despite treatment, but has had no treatment.');
+    notes.push(
+      'Reports worsening despite treatment, but has had no treatment.',
+    );
   }
 
   return notes;

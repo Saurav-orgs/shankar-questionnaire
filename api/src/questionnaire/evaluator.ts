@@ -153,9 +153,7 @@ export function nextQuestion(
   context: EvaluationContext,
 ): Question | null {
   const visible = visibleQuestions(schema, context);
-  return (
-    visible.find((question) => isBlank(context[question.key])) ?? null
-  );
+  return visible.find((question) => isBlank(context[question.key])) ?? null;
 }
 
 /** Visible + required + unanswered. Empty means the assessment can be submitted. */

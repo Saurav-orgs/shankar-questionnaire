@@ -43,7 +43,8 @@ export function buildTemplateSummary(
   lines.push(`Score: ${evaluation.score}`);
   lines.push('');
   lines.push('Key findings:');
-  for (const finding of keyFindings(labels, context)) lines.push(`• ${finding}`);
+  for (const finding of keyFindings(labels, context))
+    lines.push(`• ${finding}`);
   lines.push('');
   lines.push(`Action: ${CATEGORY_INFO[evaluation.category].action}`);
   lines.push(
@@ -67,7 +68,11 @@ export function buildTemplateSummary(
 
 function patientLine(context: EvaluationContext): string {
   const title =
-    context.gender === 'male' ? 'Mr. ' : context.gender === 'female' ? 'Mrs. ' : '';
+    context.gender === 'male'
+      ? 'Mr. '
+      : context.gender === 'female'
+        ? 'Mrs. '
+        : '';
   const name = context.name ? String(context.name) : 'Name not given';
   const age = context.age ? `, ${String(context.age)} yrs` : '';
   const city = context.city ? ` (${String(context.city)})` : '';
@@ -110,7 +115,9 @@ function keyFindings(
     : [];
 
   const axial = problems.filter((p) => p === 'neck_pain' || p === 'back_pain');
-  const radiating = problems.filter((p) => p === 'arm_pain' || p === 'leg_pain');
+  const radiating = problems.filter(
+    (p) => p === 'arm_pain' || p === 'leg_pain',
+  );
   if (axial.length || radiating.length) {
     const parts = [...axial, ...radiating].map((p) => PROBLEM_SHORT[p]);
     const onlyAxial = radiating.length === 0;
@@ -120,7 +127,8 @@ function keyFindings(
         : parts.join(' + ').replace(/^./, (c) => c.toUpperCase()),
     );
   }
-  if (!radiating.length && problems.length) out.push('No radiating arm/leg pain');
+  if (!radiating.length && problems.length)
+    out.push('No radiating arm/leg pain');
   if (problems.includes('numbness_tingling')) out.push('Numbness/tingling');
   if (problems.includes('deformity')) out.push('Spine deformity');
   if (problems.includes('injury')) out.push('Spine injury/fracture');
@@ -130,7 +138,8 @@ function keyFindings(
 
   if (context.weakness === 'no') out.push('No weakness');
   if (context.weakness === 'stable') out.push('Arm/leg weakness (stable)');
-  if (context.weakness === 'progressive') out.push('Progressive arm/leg weakness');
+  if (context.weakness === 'progressive')
+    out.push('Progressive arm/leg weakness');
 
   if (context.walking_balance === 'no') out.push('No walking difficulty');
   if (context.walking_balance === 'yes') out.push('Walking/balance difficulty');
@@ -139,7 +148,9 @@ function keyFindings(
   }
 
   if (context.duration) {
-    out.push(DURATION_SHORT[String(context.duration)] ?? String(context.duration));
+    out.push(
+      DURATION_SHORT[String(context.duration)] ?? String(context.duration),
+    );
   }
 
   const treatment = Array.isArray(context.treatment)
@@ -155,7 +166,8 @@ function keyFindings(
       ? ` — ${RESPONSE_SHORT[String(context.treatment_response)] ?? labels.answerLabel('treatment_response', context.treatment_response).toLowerCase()}`
       : '';
     if (tried.length) out.push(`${tried.join('/')}${response}`);
-    if (treatment.includes('previous_surgery')) out.push('Previous spine surgery');
+    if (treatment.includes('previous_surgery'))
+      out.push('Previous spine surgery');
   }
 
   if (context.has_imaging === 'yes') out.push('MRI/CT/X-ray available');
@@ -181,10 +193,13 @@ function keyFindings(
   }
 
   if (context.consult_reason) {
-    out.push(`Reason: ${labels.answerLabel('consult_reason', context.consult_reason)}`);
+    out.push(
+      `Reason: ${labels.answerLabel('consult_reason', context.consult_reason)}`,
+    );
   }
 
-  if (context.previous_patient === 'yes') out.push('Previous patient of Dr. Acharya');
+  if (context.previous_patient === 'yes')
+    out.push('Previous patient of Dr. Acharya');
 
   return out;
 }

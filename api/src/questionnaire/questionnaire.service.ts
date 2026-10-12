@@ -26,7 +26,8 @@ export class QuestionnaireService {
 
   async getById(id: string): Promise<QuestionnaireVersion> {
     const version = await this.versions.findByPk(id);
-    if (!version) throw new NotFoundException('Questionnaire version not found.');
+    if (!version)
+      throw new NotFoundException('Questionnaire version not found.');
     return version;
   }
 
